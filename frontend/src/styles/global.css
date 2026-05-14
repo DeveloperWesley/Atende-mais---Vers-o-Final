@@ -162,24 +162,32 @@ button:hover {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: var(--text);
 }
 
 .brand strong {
   font-size: 1.55rem;
   line-height: 1;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
 }
 
 .brand strong span {
-  color: #6a57ff;
+  color: #6d68ff;
+  text-shadow: 0 0 16px rgba(103, 91, 255, 0.54);
 }
 
 .brand-mark {
   width: 48px;
   height: 48px;
-  object-fit: contain;
-  filter: drop-shadow(0 0 13px rgba(86, 107, 255, 0.56));
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.brand-mark-shape {
+  vector-effect: non-scaling-stroke;
 }
 
 .brand-symbol {
