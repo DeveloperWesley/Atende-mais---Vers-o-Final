@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path . -Recurse -Force)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(Start-Sleep -Seconds 4)",
+      "Bash(Get-Content \"C:\\\\Users\\\\A95331~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-a95331106-Desktop-Atende-\\\\9b0270a1-a055-483b-90ce-9d20a55d7e8a\\\\tasks\\\\blxqdjtay.output\" -Tail 20)",
+      "Bash(npx vite *)",
+      "Bash(python3 -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Settings } from 'lucide-react';
+import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Receipt, Settings } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -103,9 +103,14 @@ export default function Sidebar() {
           <span>Dashboard</span>
         </NavLink>
 
-        <NavLink to="/dashboard" className="side-link">
+        <NavLink to="/atendimentos" className={({ isActive }) => `side-link${isActive ? ' active' : ''}`}>
           <CalendarDays size={18} />
           <span>Atendimentos</span>
+        </NavLink>
+
+        <NavLink to="/despesas" className={({ isActive }) => `side-link${isActive ? ' active' : ''}`}>
+          <Receipt size={18} />
+          <span>Despesas</span>
         </NavLink>
 
         {isAdmin && (
