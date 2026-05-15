@@ -1,57 +1,85 @@
-import { ChevronDown, LogOut, Home } from 'lucide-react';
+import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Settings } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
-function LogoMark() {
+export function LogoMark({ size = 36, glow = false }) {
+  const id = `lm${size}`;
+  const blur = glow ? 14 : 9;
+  const glowOp = glow ? 0.9 : 0.72;
+
   return (
-    <svg className="brand-mark" viewBox="0 0 72 72" role="presentation" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      style={{ overflow: 'visible', flexShrink: 0 }}
+    >
       <defs>
-        <linearGradient id="mark-fill" x1="10" y1="12" x2="62" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#44dcff" />
-          <stop offset="0.45" stopColor="#536bff" />
-          <stop offset="1" stopColor="#a133ff" />
+        {/* Gradiente ciano → azul → roxo profundo */}
+        <linearGradient id={`${id}g`} x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#52D4FF" />
+          <stop offset="42%"  stopColor="#5058FF" />
+          <stop offset="100%" stopColor="#7B12FF" />
         </linearGradient>
-        <linearGradient id="mark-stroke" x1="8" y1="8" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#89f1ff" />
-          <stop offset="0.5" stopColor="#4362ff" />
-          <stop offset="1" stopColor="#c63dff" />
+
+        {/* Sombra de profundidade (canto inferior direito) */}
+        <radialGradient id={`${id}d`} cx="70%" cy="70%" r="55%">
+          <stop offset="0%"   stopColor="#080035" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#080035" stopOpacity="0" />
+        </radialGradient>
+
+        {/* Brilho glass (topo) */}
+        <linearGradient id={`${id}s`} x1="50" y1="10" x2="50" y2="56" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stopColor="#fff" stopOpacity="0.58" />
+          <stop offset="100%" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
-        <filter id="mark-glow" x="-45%" y="-45%" width="190%" height="190%">
-          <feDropShadow dx="0" dy="10" stdDeviation="8" floodColor="#4b6cff" floodOpacity="0.42" />
-          <feDropShadow dx="0" dy="0" stdDeviation="7" floodColor="#a733ff" floodOpacity="0.35" />
-        </filter>
+
+        {/* Forma "+" com braços finos em cápsula */}
+        <clipPath id={`${id}c`}>
+          <rect x="38" y="10" width="24" height="80" rx="12" />
+          <rect x="10" y="38" width="80" height="24" rx="12" />
+        </clipPath>
       </defs>
-      <g filter="url(#mark-glow)" transform="rotate(8 36 36)">
-        <path
-          className="brand-mark-shape"
-          d="M31.5 6h9c4.2 0 7.4 3.7 6.8 7.9l-2.1 14.2h14.9c4 0 7.2 3.2 7.2 7.2v7.5c0 4-3.2 7.2-7.2 7.2H45.2l2.1 14.2c0.6 4.2-2.6 7.9-6.8 7.9h-9c-4.2 0-7.4-3.7-6.8-7.9L26.8 50H11.9c-4 0-7.2-3.2-7.2-7.2v-7.5c0-4 3.2-7.2 7.2-7.2h14.9L24.7 13.9C24.1 9.7 27.3 6 31.5 6Z"
-          fill="url(#mark-fill)"
-          stroke="url(#mark-stroke)"
-          strokeWidth="2.4"
-        />
-        <path
-          d="M31.6 10.5h8.1c1.8 0 3.2 1.6 2.9 3.4l-2.3 16.6c-0.2 1.2 0.8 2.3 2 2.3h17.3c1.6 0 2.9 1.3 2.9 2.9"
-          fill="none"
-          stroke="rgba(255,255,255,0.56)"
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-        <circle cx="22.5" cy="35.8" r="2.4" fill="rgba(255,255,255,0.86)" />
-        <circle cx="34.8" cy="24.2" r="1.3" fill="rgba(255,255,255,0.55)" />
+
+      {/* Glow neon atrás do símbolo */}
+      <rect x="38" y="10" width="24" height="80" rx="12"
+        fill={`rgba(60,100,255,${glowOp})`}
+        style={{ filter: `blur(${blur}px)` }} />
+      <rect x="10" y="38" width="80" height="24" rx="12"
+        fill={`rgba(60,100,255,${glowOp})`}
+        style={{ filter: `blur(${blur}px)` }} />
+
+      {/* Símbolo "+" preenchido */}
+      <g clipPath={`url(#${id}c)`}>
+        <rect x="0" y="0" width="100" height="100" fill={`url(#${id}g)`} />
+        <rect x="0" y="0" width="100" height="100" fill={`url(#${id}d)`} />
+        <rect x="0" y="0" width="100" height="100" fill={`url(#${id}s)`} />
+        <ellipse cx="43" cy="27" rx="14" ry="9"
+          fill="rgba(255,255,255,0.35)"
+          style={{ filter: 'blur(4px)' }} />
+        <circle cx="37" cy="20" r="3" fill="rgba(255,255,255,0.82)" />
       </g>
     </svg>
   );
 }
 
-export function Brand() {
+export function Brand({ size, glow = false }) {
   return (
-    <div className="brand" aria-label="Atende+">
-      <LogoMark />
-      <strong>
-        Atende<span>+</span>
-      </strong>
+    <div className="brand">
+      <LogoMark size={size || 32} glow={glow} />
+      <strong>Atende<span>+</span></strong>
     </div>
   );
+}
+
+function getInitials(nome = '') {
+  const parts = nome.trim().split(' ').filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export default function Sidebar() {
@@ -63,28 +91,45 @@ export default function Sidebar() {
     navigate('/login');
   }
 
+  const isAdmin = user?.perfil === 'admin';
+
   return (
-    <aside className="sidebar glass-panel">
+    <aside className="sidebar">
       <Brand />
 
       <nav className="side-nav" aria-label="Menu principal">
+        <NavLink to="/dashboard" className={({ isActive }) => `side-link${isActive ? ' active' : ''}`}>
+          <LayoutDashboard size={18} />
+          <span>Dashboard</span>
+        </NavLink>
+
         <NavLink to="/dashboard" className="side-link">
-          <Home size={18} />
+          <CalendarDays size={18} />
           <span>Atendimentos</span>
         </NavLink>
-        <button className="side-link side-button" onClick={handleLogout}>
+
+        {isAdmin && (
+          <NavLink to="/admin" className={({ isActive }) => `side-link${isActive ? ' active' : ''}`}>
+            <Settings size={18} />
+            <span>Administração</span>
+          </NavLink>
+        )}
+
+        <div className="side-divider" />
+
+        <button className="side-link" onClick={handleLogout}>
           <LogOut size={18} />
           <span>Sair</span>
         </button>
       </nav>
 
       <div className="user-card">
-        <span className="avatar">DS</span>
-        <span>
-          <strong>{user?.nome || 'Dr. João Silva'}</strong>
-          <small>Profissional</small>
-        </span>
-        <ChevronDown size={16} />
+        <div className="avatar">{getInitials(user?.nome)}</div>
+        <div className="user-card-info">
+          <strong>{user?.nome || '—'}</strong>
+          <small>{isAdmin ? 'Administrador' : user?.especialidade || 'Profissional'}</small>
+        </div>
+        <ChevronDown size={15} color="var(--text-light)" />
       </div>
     </aside>
   );

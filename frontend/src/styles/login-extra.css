@@ -1,0 +1,19 @@
+/* Brand grande na tela de login */
+.login-left .brand {
+  margin-bottom: 36px;
+  gap: 16px;
+}
+
+.login-left .brand strong {
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+/* Mini logo no card de login */
+.login-logo-mini {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+  filter: drop-shadow(0 4px 16px rgba(100,60,255,0.35));
+}

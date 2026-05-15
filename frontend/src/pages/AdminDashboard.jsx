@@ -1,100 +1,207 @@
-import { Download, FileSpreadsheet, Search, Users } from 'lucide-react';
+import { CheckCircle, Download, FileSpreadsheet, Search, Users, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import AtendimentoTable from '../components/AtendimentoTable.jsx';
-import Button from '../components/Button.jsx';
 import CardResumo from '../components/CardResumo.jsx';
 import Input from '../components/Input.jsx';
 import Sidebar from '../components/Sidebar.jsx';
-
-const profissionais = [
-  { id: 1, nome: 'Dr. João Silva', especialidade: 'Psicologia', total: 'R$ 3.250,00', atendimentos: 12 },
-  { id: 2, nome: 'Dra. Camila Rocha', especialidade: 'Nutrição', total: 'R$ 2.480,00', atendimentos: 9 },
-  { id: 3, nome: 'Dr. Rafael Martins', especialidade: 'Fisioterapia', total: 'R$ 4.100,00', atendimentos: 15 }
-];
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 const atendimentosAdmin = [
-  { id: 1, data: '24/05/2024', paciente: 'Maria Oliveira', pagador: 'Maria Oliveira', valor: 'R$ 250,00', precisaDoc: true },
-  { id: 2, data: '23/05/2024', paciente: 'João Santos', pagador: 'João Santos', valor: 'R$ 180,00', precisaDoc: false },
-  { id: 3, data: '22/05/2024', paciente: 'Ana Paula Souza', pagador: 'Ana Paula Souza', valor: 'R$ 300,00', precisaDoc: true },
-  { id: 4, data: '21/05/2024', paciente: 'Carlos Lima', pagador: 'Empresa XYZ Ltda', valor: 'R$ 500,00', precisaDoc: true }
+  { id: 1, data: '16/05/2024', paciente: 'Maria Oliveira', pagador: 'Maria Oliveira', valor: 'R$ 250,00', precisaDoc: true },
+  { id: 2, data: '15/05/2024', paciente: 'João Souza',    pagador: 'João Souza',    valor: 'R$ 180,00', precisaDoc: false },
+  { id: 3, data: '14/05/2024', paciente: 'Ana Paula Lima', pagador: 'Plano Saúde ABC', valor: 'R$ 300,00', precisaDoc: true },
+  { id: 4, data: '13/05/2024', paciente: 'Carlos Eduardo', pagador: 'Carlos Eduardo', valor: 'R$ 150,00', precisaDoc: false }
 ];
 
+const STATUS_LABEL = { ativo: 'Ativo', pendente: 'Pendente', inativo: 'Inativo' };
+const STATUS_CLASS = { ativo: 'badge badge-active', pendente: 'badge badge-pending', inativo: 'badge badge-inactive' };
+
 export default function AdminDashboard() {
+  const { usuarios, aprovarUsuario, rejeitarUsuario } = useAuth();
+  const [aba, setAba] = useState('atendimentos');
   const [busca, setBusca] = useState('');
-  const profissionaisFiltrados = useMemo(
-    () => profissionais.filter((item) => item.nome.toLowerCase().includes(busca.toLowerCase())),
-    [busca]
+
+  const profissionais = useMemo(() => usuarios.filter((u) => u.perfil === 'profissional'), [usuarios]);
+  const pendentes = useMemo(() => profissionais.filter((u) => u.status === 'pendente'), [profissionais]);
+
+  const usuariosFiltrados = useMemo(
+    () => profissionais.filter((u) => u.nome.toLowerCase().includes(busca.toLowerCase())),
+    [profissionais, busca]
   );
 
   return (
-    <main className="app-shell dashboard-page">
+    <div className="app-shell">
       <Sidebar />
 
-      <section className="content-area">
-        <header className="dashboard-header">
-          <div>
+      <div className="content-area">
+        <header className="top-bar">
+          <div className="top-bar-greeting">
             <h1>Área administrativa</h1>
-            <p>Extração de dados para notas, Receita Saúde, IRPF e controle financeiro.</p>
+            <p>Gerencie usuários e extraia dados para NF, Receita Saúde e IRPF.</p>
           </div>
-          <div className="header-actions">
-            <Button icon={Download}>CSV</Button>
-            <Button icon={FileSpreadsheet} variant="secondary">
-              Excel
-            </Button>
+          <div className="top-bar-actions">
+            <button className="btn btn-ghost btn-md">
+              <Download size={16} /> CSV
+            </button>
+            <button className="btn btn-secondary btn-md">
+              <FileSpreadsheet size={16} /> Excel
+            </button>
           </div>
         </header>
 
-        <section className="summary-grid admin-summary" aria-label="Resumo administrativo">
-          <CardResumo icon={Users} label="Profissionais" value="3" helper="Com registros ativos" tone="blue" />
-          <CardResumo icon={FileSpreadsheet} label="Atendimentos" value="36" helper="Competência atual" tone="green" />
-          <CardResumo icon={Download} label="Pendentes de documento" value="14" helper="Para NF/Recibo" tone="orange" />
-        </section>
+        <div className="main-content">
+          {/* Summary */}
+          <section className="summary-grid admin-summary" aria-label="Resumo administrativo">
+            <CardResumo
+              icon={Users}
+              label="Profissionais ativos"
+              value={String(profissionais.filter((u) => u.status === 'ativo').length)}
+              helper="Com acesso liberado"
+              tone="blue"
+            />
+            <CardResumo
+              icon={FileSpreadsheet}
+              label="Atendimentos"
+              value="36"
+              helper="Competência atual"
+              tone="green"
+            />
+            <CardResumo
+              icon={Users}
+              label="Aguardando aprovação"
+              value={String(pendentes.length)}
+              helper="Novos cadastros"
+              helperType="warning"
+              tone="orange"
+            />
+          </section>
 
-        <section className="filters-card glass-panel">
-          <Input
-            label="Profissional, paciente ou pagador"
-            icon={Search}
-            placeholder="Buscar"
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-          />
-          <Input label="Período inicial" type="date" />
-          <Input label="Período final" type="date" />
-          <Input label="Competência" placeholder="05/2024" />
-        </section>
+          {/* Tabs */}
+          <div className="admin-tabs">
+            <button className={`admin-tab${aba === 'atendimentos' ? ' active' : ''}`} onClick={() => setAba('atendimentos')}>
+              Atendimentos
+            </button>
+            <button className={`admin-tab${aba === 'usuarios' ? ' active' : ''}`} onClick={() => setAba('usuarios')}>
+              Usuários
+              {pendentes.length > 0 && <span className="tab-count">{pendentes.length}</span>}
+            </button>
+          </div>
 
-        <section className="admin-grid">
-          <article className="data-card glass-panel">
-            <div className="section-title-row">
-              <h2>Profissionais</h2>
-              <button className="inline-action">Ver todos</button>
-            </div>
-            <div className="professional-list">
-              {profissionaisFiltrados.map((profissional) => (
-                <button className="professional-row" key={profissional.id}>
-                  <span>
-                    <strong>{profissional.nome}</strong>
-                    <small>{profissional.especialidade}</small>
-                  </span>
-                  <span>
-                    <strong>{profissional.total}</strong>
-                    <small>{profissional.atendimentos} atendimentos</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </article>
+          {/* Atendimentos tab */}
+          {aba === 'atendimentos' && (
+            <>
+              <section className="filters-card surface-card">
+                <Input
+                  label="Profissional, paciente ou pagador"
+                  icon={Search}
+                  placeholder="Buscar"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+                <Input label="Período inicial" type="date" />
+                <Input label="Período final" type="date" />
+                <Input label="Competência" placeholder="05/2024" />
+              </section>
 
-          <article className="data-card glass-panel">
-            <div className="section-title-row">
-              <h2>Atendimentos</h2>
-              <button className="inline-action">Exportar</button>
-            </div>
-            {/* TODO: substituir dados mockados */}
-            <AtendimentoTable atendimentos={atendimentosAdmin} compact />
-          </article>
-        </section>
-      </section>
-    </main>
+              <div className="admin-grid">
+                <article className="data-card surface-card">
+                  <div className="section-title-row">
+                    <h2>Profissionais</h2>
+                  </div>
+                  <div className="professional-list">
+                    {profissionais
+                      .filter((u) => u.status === 'ativo' && u.nome.toLowerCase().includes(busca.toLowerCase()))
+                      .map((u) => (
+                        <button className="professional-row" key={u.id}>
+                          <span>
+                            <strong>{u.nome}</strong>
+                            <small>{u.especialidade}</small>
+                          </span>
+                          <span style={{ textAlign: 'right' }}>
+                            <strong>—</strong>
+                            <small>Ver atendimentos</small>
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </article>
+
+                <article className="data-card surface-card">
+                  <div className="section-title-row">
+                    <h2>Atendimentos</h2>
+                    <button className="inline-action">Exportar</button>
+                  </div>
+                  <AtendimentoTable atendimentos={atendimentosAdmin} compact />
+                </article>
+              </div>
+            </>
+          )}
+
+          {/* Usuários tab */}
+          {aba === 'usuarios' && (
+            <article className="data-card surface-card">
+              <div className="section-title-row">
+                <h2>Usuários cadastrados</h2>
+                <div style={{ width: 220 }}>
+                  <Input
+                    placeholder="Buscar por nome…"
+                    icon={Search}
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table className="users-table">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>E-mail</th>
+                      <th>Especialidade</th>
+                      <th>Cadastro</th>
+                      <th>Status</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usuariosFiltrados.map((u) => (
+                      <tr key={u.id}>
+                        <td>{u.nome}</td>
+                        <td>{u.email}</td>
+                        <td>{u.especialidade || '—'}</td>
+                        <td>{u.criadoEm}</td>
+                        <td><span className={STATUS_CLASS[u.status]}>{STATUS_LABEL[u.status]}</span></td>
+                        <td>
+                          <div className="action-row">
+                            {u.status !== 'ativo' && (
+                              <button className="approve-btn" onClick={() => aprovarUsuario(u.id)}>
+                                <CheckCircle size={13} /> Aprovar
+                              </button>
+                            )}
+                            {u.status !== 'inativo' && (
+                              <button className="reject-btn" onClick={() => rejeitarUsuario(u.id)}>
+                                <XCircle size={13} /> {u.status === 'pendente' ? 'Rejeitar' : 'Desativar'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {usuariosFiltrados.length === 0 && (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                          Nenhum usuário encontrado.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
