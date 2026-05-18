@@ -11,7 +11,6 @@ const DEFAULTS = {
   telefone: '',
   email: 'joao@atende.com',
   avatar: null,
-  formatoData: 'DD/MM/AAAA',
   confirmarExclusao: true,
 };
 

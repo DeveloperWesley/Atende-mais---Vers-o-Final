@@ -169,7 +169,7 @@ export default function Login() {
                   />
                   Lembrar de mim
                 </label>
-                <a href="#recuperar" className="soft-link">Esqueci minha senha</a>
+                <Link to="/esqueci-senha" className="soft-link">Esqueci minha senha</Link>
               </div>
 
               <button type="submit" className="btn btn-primary btn-login" disabled={loading}>

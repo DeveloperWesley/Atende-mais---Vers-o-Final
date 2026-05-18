@@ -1,27 +1,21 @@
 import { Bell, Check, ChevronDown, Menu, Moon, Plus, Sun, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useNotifications } from '../contexts/NotificationsContext.jsx';
 import { useSettings } from '../contexts/SettingsContext.jsx';
 import { useSidebar } from '../contexts/SidebarContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 
-/* ── Notificações mock iniciais ── */
-const MOCK_NOTIFS = [
-  { id: 1, tipo: 'aprovacao', lida: false, texto: 'Rafael Martins aguarda aprovação de cadastro.',   tempo: '5 min atrás'   },
-  { id: 2, tipo: 'aprovacao', lida: false, texto: 'João Souza aguarda aprovação de cadastro.',        tempo: '12 min atrás'  },
-  { id: 3, tipo: 'sistema',   lida: false, texto: 'Rafael Ferreira solicitou acesso ao sistema.',     tempo: '1 hora atrás'  },
-];
+const TIPO_COLOR = {
+  pendente: 'var(--orange)',
+  cadastro: 'var(--primary)',
+  sistema:  'var(--blue)',
+  admin:    'var(--primary)',
+  info:     'var(--blue)',
+};
 
-/* ── Painel de notificações ── */
-function NotifPanel({ notifs, onMarkAll, onMarkOne, onClose }) {
+function NotifPanel({ notifs, onMarkAll, onMarkOne }) {
   const naoLidas = notifs.filter(n => !n.lida).length;
-
-  const TIPO_COLOR = {
-    aprovacao: 'var(--orange)',
-    sistema:   'var(--primary)',
-    info:      'var(--blue)',
-  };
-
   return (
     <div className="notif-panel surface-card">
       <div className="notif-panel-header">
@@ -33,7 +27,6 @@ function NotifPanel({ notifs, onMarkAll, onMarkOne, onClose }) {
           <Check size={13} /> Marcar todas como lidas
         </button>
       </div>
-
       <div className="notif-list">
         {notifs.length === 0 ? (
           <div className="notif-empty">
@@ -44,7 +37,7 @@ function NotifPanel({ notifs, onMarkAll, onMarkOne, onClose }) {
         ) : (
           notifs.map(n => (
             <div key={n.id} className={`notif-item${n.lida ? ' notif-lida' : ''}`}>
-              <span className="notif-dot" style={{ background: n.lida ? 'transparent' : TIPO_COLOR[n.tipo] || 'var(--primary)' }} />
+              <span className="notif-dot" style={{ background: n.lida ? 'transparent' : (TIPO_COLOR[n.tipo] || 'var(--primary)') }} />
               <div className="notif-item-body">
                 <p>{n.texto}</p>
                 <small>{n.tempo}</small>
@@ -67,12 +60,23 @@ export default function Header({ onNovoAtendimento, title, subtitle, actions }) 
   const { displayName, settings } = useSettings();
   const { theme, toggleTheme }    = useTheme();
   const { toggle }                = useSidebar();
+  const {
+    adminNotifs, markAdminAll, markAdminOne,
+    getUserNotifs, markUserAll, markUserOne,
+  } = useNotifications();
 
-  const [notifs,      setNotifs]      = useState(MOCK_NOTIFS);
-  const [notifOpen,   setNotifOpen]   = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
 
-  /* Fecha ao clicar fora */
+  /* Seleciona notificações conforme perfil */
+  const isAdmin      = user?.perfil === 'admin' && !impersonating;
+  const effectiveUid = impersonating?.id ?? user?.id;
+  const notifs       = isAdmin ? adminNotifs : getUserNotifs(effectiveUid);
+  const markAll      = isAdmin ? markAdminAll  : () => markUserAll(effectiveUid);
+  const markOne      = isAdmin ? markAdminOne  : (id) => markUserOne(effectiveUid, id);
+
+  const naoLidas = notifs.filter(n => !n.lida).length;
+
   useEffect(() => {
     function handleOutside(e) {
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
@@ -80,11 +84,6 @@ export default function Header({ onNovoAtendimento, title, subtitle, actions }) 
     if (notifOpen) document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [notifOpen]);
-
-  function markAll()  { setNotifs(prev => prev.map(n => ({ ...n, lida: true }))); }
-  function markOne(id){ setNotifs(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n)); }
-
-  const naoLidas = notifs.filter(n => !n.lida).length;
 
   /* Nome e saudação */
   const effectiveName = impersonating ? impersonating.nome : displayName;

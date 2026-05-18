@@ -1,7 +1,7 @@
 import {
-  Check, ChevronDown, MoreHorizontal, Play,
-  Search, Shield, SlidersHorizontal, UserCheck,
-  UserMinus, UserX, Users, X
+  Bell, Check, ChevronDown, MoreHorizontal, Play,
+  Search, Send, Shield, SlidersHorizontal, UserCheck,
+  UserX, Users, X
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,7 @@ import AdminSidebar from '../components/AdminSidebar.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Header from '../components/Header.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useNotifications } from '../contexts/NotificationsContext.jsx';
 
 const PER_PAGE = 7;
 
@@ -85,13 +86,86 @@ function StatusBadge({ status }) {
   );
 }
 
+/* ── Modal de envio de notificação ── */
+function SendNotifModal({ usuarios, onClose, onSend }) {
+  const [dest,  setDest]  = useState('all');
+  const [userId,setUserId]= useState('');
+  const [texto, setTexto] = useState('');
+
+  const ativos = usuarios.filter(u => u.status === 'ativo');
+
+  function handleSend(e) {
+    e.preventDefault();
+    if (!texto.trim()) return;
+    const ids = dest === 'all' ? ativos.map(u => u.id) : [Number(userId)];
+    onSend(ids, texto.trim());
+    onClose();
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <section className="modal-panel surface-card" style={{ maxWidth:480 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-heading">
+          <h2>Enviar notificação</h2>
+          <p>A notificação aparecerá no sino dos usuários selecionados.</p>
+        </div>
+        <form onSubmit={handleSend} style={{ display:'flex', flexDirection:'column', gap:16, marginTop:8 }}>
+          <div className="field">
+            <label className="field-label">Destinatário</label>
+            <div className="input-shell">
+              <select value={dest} onChange={e => setDest(e.target.value)}>
+                <option value="all">Todos os usuários ativos ({ativos.length})</option>
+                <option value="one">Usuário específico</option>
+              </select>
+            </div>
+          </div>
+
+          {dest === 'one' && (
+            <div className="field">
+              <label className="field-label">Selecionar usuário</label>
+              <div className="input-shell">
+                <select value={userId} onChange={e => setUserId(e.target.value)} required>
+                  <option value="">Selecione…</option>
+                  {ativos.map(u => (
+                    <option key={u.id} value={u.id}>{u.nome} — {u.especialidade}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="field">
+            <label className="field-label">Mensagem</label>
+            <textarea
+              value={texto}
+              onChange={e => setTexto(e.target.value)}
+              placeholder="Digite a mensagem da notificação…"
+              rows={3}
+              required
+            />
+          </div>
+
+          <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary btn-sm">
+              <Send size={14} /> Enviar notificação
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const {
     usuarios, aprovarUsuario, rejeitarUsuario,
     desativarUsuario, reativarUsuario, startImpersonation,
   } = useAuth();
+  const { sendToUser, sendToAll, addAdminNotif } = useNotifications();
   const navigate = useNavigate();
   const { toasts, addToast } = useToast();
+  const [notifModal, setNotifModal] = useState(false);
 
   const [search,       setSearch]  = useState('');
   const [filterStatus, setFStatus] = useState('');
@@ -119,9 +193,27 @@ export default function AdminDashboard() {
 
   function clearFilters() { setSearch(''); setFStatus(''); setFProf(''); setPage(1); }
 
-  function handleAprovar(u)  { aprovarUsuario(u.id);  addToast(`${u.nome} aprovado com sucesso!`, 'success'); }
-  function handleRejeitar(u) { rejeitarUsuario(u.id); addToast(`Cadastro de ${u.nome} recusado.`, 'error'); }
-  function handleReativar(u) { reativarUsuario(u.id); addToast(`${u.nome} reativado com sucesso!`, 'success'); }
+  function handleAprovar(u) {
+    aprovarUsuario(u.id);
+    addToast(`${u.nome} aprovado com sucesso!`, 'success');
+    /* Notifica o usuário aprovado */
+    sendToUser(u.id, 'Seu cadastro foi aprovado! Bem-vindo ao Atende+. Faça login para começar.');
+  }
+  function handleRejeitar(u) {
+    rejeitarUsuario(u.id);
+    addToast(`Cadastro de ${u.nome} recusado.`, 'error');
+  }
+  function handleReativar(u) {
+    reativarUsuario(u.id);
+    addToast(`${u.nome} reativado com sucesso!`, 'success');
+    sendToUser(u.id, 'Sua conta foi reativada. Você já pode acessar o sistema normalmente.');
+  }
+
+  function handleSendNotif(userIds, texto) {
+    if (userIds.length === 1) sendToUser(userIds[0], texto);
+    else sendToAll(userIds, texto);
+    addToast('Notificação enviada com sucesso!', 'success');
+  }
 
   function handleDesativar(u) {
     setConfirm({
@@ -137,7 +229,15 @@ export default function AdminDashboard() {
     <div className="app-shell">
       <AdminSidebar />
       <div className="content-area">
-        <Header title="Administração" subtitle="Gerencie usuários e controle o acesso ao sistema." />
+        <Header
+          title="Administração"
+          subtitle="Gerencie usuários e controle o acesso ao sistema."
+          actions={
+            <button className="btn btn-primary btn-sm" onClick={() => setNotifModal(true)}>
+              <Bell size={15} /> Enviar notificação
+            </button>
+          }
+        />
 
         <div className="main-content">
 
@@ -304,6 +404,13 @@ export default function AdminDashboard() {
       {confirm && (
         <ConfirmDialog title={confirm.title} message={confirm.message}
           onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
+      )}
+      {notifModal && (
+        <SendNotifModal
+          usuarios={professionals}
+          onClose={() => setNotifModal(false)}
+          onSend={handleSendNotif}
+        />
       )}
       <ToastList toasts={toasts} />
     </div>

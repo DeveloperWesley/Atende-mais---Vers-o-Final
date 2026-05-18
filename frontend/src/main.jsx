@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './contexts/AuthContext.jsx';
 import { DataProvider } from './contexts/DataContext.jsx';
+import { NotificationsProvider } from './contexts/NotificationsContext.jsx';
 import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import './styles/global.css';
 import './styles/login-extra.css';
@@ -13,9 +14,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <DataProvider>
-            <App />
-          </DataProvider>
+          <NotificationsProvider>
+            <DataProvider>
+              <App />
+            </DataProvider>
+          </NotificationsProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

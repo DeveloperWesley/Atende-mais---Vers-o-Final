@@ -254,16 +254,6 @@ export default function Configuracoes() {
                   </div>
                 </div>
 
-                <div className="field">
-                  <label className="field-label">Formato de data</label>
-                  <div className="input-shell">
-                    <select value={form.formatoData} onChange={set('formatoData')}>
-                      <option>DD/MM/AAAA</option>
-                      <option>MM/DD/AAAA</option>
-                    </select>
-                  </div>
-                </div>
-
                 <div className="field cfg-toggle-field" style={{ gridColumn:'1 / -1' }}>
                   <div className="cfg-toggle-row">
                     <div>

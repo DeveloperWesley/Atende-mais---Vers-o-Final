@@ -122,7 +122,7 @@ export function AuthProvider({ children }) {
   const effectiveUser = impersonating || user;
 
   const value = useMemo(() => ({
-    user, usuarios, effectiveUser, impersonating,
+    user, usuarios, setUsuarios, effectiveUser, impersonating,
     login, logout, registrar,
     aprovarUsuario, rejeitarUsuario, desativarUsuario, reativarUsuario,
     startImpersonation, stopImpersonation,

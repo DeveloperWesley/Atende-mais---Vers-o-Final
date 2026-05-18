@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import ImpersonationBanner from './components/ImpersonationBanner.jsx';
 import Login from './pages/Login.jsx';
 import Cadastro from './pages/Cadastro.jsx';
+import EsqueciSenha from './pages/EsqueciSenha.jsx';
+import RedefinirSenha from './pages/RedefinirSenha.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Atendimentos from './pages/Atendimentos.jsx';
 import Despesas from './pages/Despesas.jsx';
@@ -31,7 +33,9 @@ export default function App() {
         <Routes>
           <Route path="/"               element={<Navigate to="/login" replace />} />
           <Route path="/login"          element={<Login />} />
-          <Route path="/cadastro"       element={<Cadastro />} />
+          <Route path="/cadastro"          element={<Cadastro />} />
+          <Route path="/esqueci-senha"     element={<EsqueciSenha />} />
+          <Route path="/redefinir-senha"   element={<RedefinirSenha />} />
           <Route path="/dashboard"      element={<DashboardRoute />} />
           <Route path="/atendimentos"   element={<Atendimentos />} />
           <Route path="/despesas"       element={<Despesas />} />
