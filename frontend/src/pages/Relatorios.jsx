@@ -3,10 +3,11 @@ import {
   Download, FileSpreadsheet, FileText, MoreVertical,
   Plus, Receipt, TrendingUp
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Header from '../components/Header.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import { useData } from '../contexts/DataContext.jsx';
+import { api } from '../services/api.js';
 
 /* ── Helpers ── */
 const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -351,11 +352,16 @@ export default function Relatorios() {
   const [periodStart,  setPeriodStart]  = useState('2024-05-01');
   const [periodEnd,    setPeriodEnd]    = useState('2024-05-31');
   const [reportType,   setReportType]   = useState('all');
-  const [generated,    setGenerated]    = useState(INITIAL_REPORTS);
+  const [generated,    setGenerated]    = useState([]);
   const [page,         setPage]         = useState(1);
   const [menuOpen,     setMenuOpen]     = useState(null);
   const [menuPos,      setMenuPos]      = useState({ top: 0, right: 0 });
   const menuRef = useRef(null);
+
+  /* Carrega histórico da API */
+  useEffect(() => {
+    api.listarRelatorios().then(setGenerated).catch(console.error);
+  }, []);
 
   const periodLabel = `${isoToBR(periodStart)} - ${isoToBR(periodEnd)}`;
 
@@ -388,16 +394,25 @@ export default function Relatorios() {
     : [reportType];
 
   /* ── Gerar relatório ── */
-  function handleGenerate() {
-    const newReports = typesToGenerate.map((tipo, i) => ({
-      id: Date.now() + i,
-      nome: `${TYPE_LABELS[tipo]} - ${new Date(periodEnd).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase())}`,
-      tipo,
-      periodo: periodLabel,
-      geradoEm: nowLabel(),
-      formato: tipo === 'atendimentos' ? 'CSV' : 'PDF',
-    }));
-    setGenerated(prev => [...newReports, ...prev]);
+  async function handleGenerate() {
+    const mes = new Date(periodEnd).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
+    const novos = await Promise.all(
+      typesToGenerate.map(tipo =>
+        api.salvarRelatorio({
+          nome:     `${TYPE_LABELS[tipo]} - ${mes}`,
+          tipo,
+          periodo:  periodLabel,
+          formato:  tipo === 'atendimentos' ? 'CSV' : 'PDF',
+        }).catch(() => ({
+          id: Date.now() + Math.random(),
+          nome: `${TYPE_LABELS[tipo]} - ${mes}`,
+          tipo, periodo: periodLabel,
+          geradoEm: nowLabel(),
+          formato: tipo === 'atendimentos' ? 'CSV' : 'PDF',
+        }))
+      )
+    );
+    setGenerated(prev => [...novos, ...prev]);
     setPage(1);
   }
 
@@ -623,7 +638,7 @@ export default function Relatorios() {
                   <Download size={13} /> Download
                 </button>
                 <button className="rel-dropdown-danger"
-                  onClick={() => { setGenerated(prev => prev.filter(x => x.id !== r.id)); setMenuOpen(null); }}>
+                  onClick={() => { api.excluirRelatorio(r.id).catch(console.error); setGenerated(prev => prev.filter(x => x.id !== r.id)); setMenuOpen(null); }}>
                   Excluir
                 </button>
               </>);

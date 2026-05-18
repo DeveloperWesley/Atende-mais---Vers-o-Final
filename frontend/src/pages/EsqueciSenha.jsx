@@ -2,8 +2,8 @@ import { ArrowLeft, IdCard, Mail, Moon, Send, ShieldCheck, Sun } from 'lucide-re
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LogoMark } from '../components/Sidebar.jsx';
-import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import { api } from '../services/api.js';
 
 function maskCpf(v) {
   const d = v.replace(/\D/g,'').slice(0,11);
@@ -18,15 +18,14 @@ function isCpf(v)   { return onlyDigits(v).length === 11; }
 function onlyDigits(v) { return v.replace(/\D/g,''); }
 
 export default function EsqueciSenha() {
-  const { usuarios } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  const [input,   setInput]   = useState('');
+  const [input,     setInput]     = useState('');
   const [isCpfMode, setIsCpfMode] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [enviado, setEnviado] = useState(null); // { email, token }
-  const [erro,    setErro]    = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [enviado,   setEnviado]   = useState(null); // { email, token }
+  const [erro,      setErro]      = useState('');
 
   function handleChange(e) {
     const raw = e.target.value;
@@ -39,32 +38,23 @@ export default function EsqueciSenha() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!input.trim()) { setErro('Informe seu e-mail ou CPF.'); return; }
+    if (!input.trim()) { setErro('Informe seu e-mail.'); return; }
+
+    // Só aceita e-mail (CPF não é suportado no backend)
+    const valor = input.trim();
+    if (!isEmail(valor)) { setErro('Informe um e-mail válido.'); return; }
 
     setLoading(true);
-    await new Promise(r => setTimeout(r, 900)); /* simula latência */
-
-    /* Busca usuário por e-mail ou CPF (mock) */
-    const q = input.trim().toLowerCase();
-    const usuario = usuarios.find(u =>
-      u.email.toLowerCase() === q ||
-      (u.cpf && onlyDigits(u.cpf) === onlyDigits(q))
-    );
-
-    if (!usuario) {
-      setErro('Não encontramos nenhuma conta com esses dados.');
+    try {
+      const res = await api.esqueciSenha(valor);
+      // Em dev, o backend retorna o token diretamente
+      const token = res?.token || '__enviado__';
+      setEnviado({ email: valor, token });
+    } catch (err) {
+      setErro(err.message || 'Erro ao processar solicitação.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    /* Gera token de reset e salva no localStorage (demo) */
-    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const expires = Date.now() + 30 * 60 * 1000; /* 30 min */
-    localStorage.setItem('reset_token', JSON.stringify({ token, userId: usuario.id, expires }));
-    console.info(`[DEV] Link de redefinição: /redefinir-senha?token=${token}`);
-
-    setEnviado({ email: usuario.email, token });
-    setLoading(false);
   }
 
   /* ── Tela de confirmação ── */

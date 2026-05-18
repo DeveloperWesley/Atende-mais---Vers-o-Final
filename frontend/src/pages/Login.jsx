@@ -27,7 +27,7 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [credentials, setCredentials] = useState({ email: 'joao@atende.com', senha: 'senha123' });
+  const [credentials, setCredentials] = useState({ email: '', senha: '' });
   const [showPass, setShowPass] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
@@ -176,26 +176,6 @@ export default function Login() {
                 {loading ? 'Entrando…' : 'Entrar'}
                 {!loading && <span style={{ fontSize: '1.1em' }}>→</span>}
               </button>
-
-              {/* Logins de exemplo */}
-              <div className="login-examples">
-                <span className="login-examples-label">Entrar como:</span>
-                <div className="login-examples-row">
-                  {[
-                    { label: 'Profissional', email: 'joao@atende.com',  senha: 'senha123' },
-                    { label: 'Admin',        email: 'admin@atende.com', senha: 'admin123' },
-                  ].map(u => (
-                    <button
-                      key={u.email}
-                      type="button"
-                      className="login-example-btn"
-                      onClick={() => setCredentials({ email: u.email, senha: u.senha })}
-                    >
-                      {u.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               <p className="auth-link-row">
                 Ainda não tem uma conta?{' '}

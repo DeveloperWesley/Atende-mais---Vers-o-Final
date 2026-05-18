@@ -1,27 +1,20 @@
 import { Camera, Check, Eye, EyeOff, Lock, Settings, User } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AdminSidebar from '../components/AdminSidebar.jsx';
 import Header from '../components/Header.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import { api } from '../services/api.js';
 
-const STORAGE_KEY = 'atende_admin_settings';
+const AVATAR_KEY = 'atende_admin_avatar';
 
-const defaults = {
-  nome: 'Administrador',
-  telefone: '',
-  email: 'admin@atende.com',
-  avatar: null,
-  notifEmail: true,
+const sysDefaults = {
+  notifEmail:    true,
   aprovacaoAuto: false,
   sessaoTimeout: '30',
   registroAcoes: true,
-  fusoHorario: 'America/Sao_Paulo',
-  idioma: 'pt-BR',
+  fusoHorario:   'America/Sao_Paulo',
+  idioma:        'pt-BR',
 };
-
-function load() {
-  try { const s = localStorage.getItem(STORAGE_KEY); if (s) return { ...defaults, ...JSON.parse(s) }; } catch {}
-  return defaults;
-}
 
 function SectionHeader({ icon: Icon, color, title, subtitle }) {
   return (
@@ -69,14 +62,42 @@ const REQS = [
 ];
 
 export default function AdminConfiguracoes() {
+  const { user } = useAuth();
   const avatarRef = useRef(null);
-  const [profile, setProfile] = useState(load);
-  const [saved, setSaved]     = useState(false);
+
+  /* Perfil */
+  const [profile, setProfile] = useState({
+    nome:     '',
+    telefone: '',
+    email:    '',
+    avatar:   localStorage.getItem(AVATAR_KEY) || null,
+  });
+  const [saved,    setSaved]    = useState(false);
+  const [savingP,  setSavingP]  = useState(false);
+
+  /* Config do sistema */
+  const [sysConfig, setSysConfig] = useState(sysDefaults);
 
   /* Senha */
-  const [senha, setSenha]   = useState({ atual: '', nova: '', confirma: '' });
+  const [senha,   setSenha]   = useState({ atual: '', nova: '', confirma: '' });
   const [showPwd, setShowPwd] = useState({ atual: false, nova: false, confirma: false });
-  const [pwdMsg, setPwdMsg] = useState({ text: '', ok: false });
+  const [pwdMsg,  setPwdMsg]  = useState({ text: '', ok: false });
+  const [savingS, setSavingS] = useState(false);
+
+  /* Carrega dados do backend ao montar */
+  useEffect(() => {
+    api.meuPerfil()
+      .then(d => setProfile(p => ({ ...p, nome: d.nome || '', telefone: d.telefone || '', email: d.email || '' })))
+      .catch(console.error);
+    api.listarAdminConfig()
+      .then(d => setSysConfig(prev => ({ ...prev, ...d })))
+      .catch(console.error);
+  }, []);
+
+  /* Preenche nome/email do token enquanto a API carrega */
+  useEffect(() => {
+    if (user) setProfile(p => ({ ...p, nome: p.nome || user.nome || '', email: p.email || user.email || '' }));
+  }, [user?.id]);
 
   function setP(f) { return e => setProfile(p => ({ ...p, [f]: e.target.value })); }
   function toggleShow(f) { setShowPwd(p => ({ ...p, [f]: !p[f] })); }
@@ -84,26 +105,55 @@ export default function AdminConfiguracoes() {
   function handleAvatar(e) {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => setProfile(p => ({ ...p, avatar: ev.target.result }));
+    reader.onload = ev => {
+      const b64 = ev.target.result;
+      setProfile(p => ({ ...p, avatar: b64 }));
+      localStorage.setItem(AVATAR_KEY, b64);
+    };
     reader.readAsDataURL(file);
   }
 
-  function handleSave() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  async function handleSave() {
+    setSavingP(true);
+    try {
+      await Promise.all([
+        api.atualizarPerfil({ nome: profile.nome, telefone: profile.telefone }),
+        api.salvarAdminConfig({
+          notificacoesEmail:    sysConfig.notifEmail,
+          aprovacaoAutomatica:  sysConfig.aprovacaoAuto,
+          sessaoTimeout:        Number(sysConfig.sessaoTimeout),
+          registroAcoes:        sysConfig.registroAcoes,
+          fusoHorario:          sysConfig.fusoHorario,
+          idioma:               sysConfig.idioma,
+        }),
+      ]);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      alert(err.message || 'Erro ao salvar.');
+    } finally {
+      setSavingP(false);
+    }
   }
 
-  function handleChangePwd(e) {
+  async function handleChangePwd(e) {
     e.preventDefault();
-    if (!senha.atual) { setPwdMsg({ text: 'Informe a senha atual.', ok: false }); return; }
-    if (senha.atual !== 'admin123') { setPwdMsg({ text: 'Senha atual incorreta.', ok: false }); return; }
+    if (!senha.atual)             { setPwdMsg({ text: 'Informe a senha atual.', ok: false }); return; }
     const allOk = REQS.every(r => r.test(senha.nova));
-    if (!allOk) { setPwdMsg({ text: 'A nova senha não atende todos os requisitos.', ok: false }); return; }
+    if (!allOk)                   { setPwdMsg({ text: 'A nova senha não atende todos os requisitos.', ok: false }); return; }
     if (senha.nova !== senha.confirma) { setPwdMsg({ text: 'As senhas não coincidem.', ok: false }); return; }
-    setPwdMsg({ text: 'Senha alterada com sucesso!', ok: true });
-    setSenha({ atual: '', nova: '', confirma: '' });
-    setTimeout(() => setPwdMsg({ text: '', ok: false }), 3000);
+
+    setSavingS(true);
+    try {
+      await api.alterarSenha({ senhaAtual: senha.atual, novaSenha: senha.nova });
+      setPwdMsg({ text: 'Senha alterada com sucesso!', ok: true });
+      setSenha({ atual: '', nova: '', confirma: '' });
+      setTimeout(() => setPwdMsg({ text: '', ok: false }), 3000);
+    } catch (err) {
+      setPwdMsg({ text: err.message || 'Erro ao alterar senha.', ok: false });
+    } finally {
+      setSavingS(false);
+    }
   }
 
   const pwdReqs = REQS.map(r => ({ ...r, met: r.test(senha.nova) }));
@@ -116,8 +166,8 @@ export default function AdminConfiguracoes() {
           title="Configurações"
           subtitle="Gerencie as configurações da área administrativa do sistema."
           actions={
-            <button className="btn btn-primary btn-sm" onClick={handleSave}>
-              <Check size={15} /> {saved ? 'Salvo!' : 'Salvar alterações'}
+            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={savingP}>
+              <Check size={15} /> {saved ? 'Salvo!' : savingP ? 'Salvando…' : 'Salvar alterações'}
             </button>
           }
         />
@@ -239,8 +289,8 @@ export default function AdminConfiguracoes() {
                   <p className={`acfg-pwd-msg${pwdMsg.ok ? ' ok' : ' err'}`}>{pwdMsg.text}</p>
                 )}
 
-                <button type="submit" className="btn btn-secondary btn-sm" style={{ marginTop: 16 }}>
-                  Alterar senha
+                <button type="submit" className="btn btn-secondary btn-sm" style={{ marginTop: 16 }} disabled={savingS}>
+                  {savingS ? 'Alterando…' : 'Alterar senha'}
                 </button>
               </form>
             </section>
@@ -260,14 +310,14 @@ export default function AdminConfiguracoes() {
                   <ToggleRow
                     label="Notificações por e-mail"
                     desc="Receber notificações sobre novos cadastros e alterações."
-                    checked={profile.notifEmail}
-                    onChange={v => setProfile(p => ({ ...p, notifEmail: v }))}
+                    checked={sysConfig.notifEmail}
+                    onChange={v => setSysConfig(p => ({ ...p, notifEmail: v }))}
                   />
                   <ToggleRow
                     label="Aprovação automática"
                     desc="Aprovar novos usuários automaticamente (não recomendado)."
-                    checked={profile.aprovacaoAuto}
-                    onChange={v => setProfile(p => ({ ...p, aprovacaoAuto: v }))}
+                    checked={sysConfig.aprovacaoAuto}
+                    onChange={v => setSysConfig(p => ({ ...p, aprovacaoAuto: v }))}
                   />
                 </div>
 
@@ -277,8 +327,8 @@ export default function AdminConfiguracoes() {
                     <label className="field-label">Sessão administrativa</label>
                     <p className="cfg-toggle-desc" style={{ marginBottom: 8 }}>Encerrar sessão automaticamente após períodos de inatividade.</p>
                     <div className="input-shell">
-                      <select value={profile.sessaoTimeout}
-                        onChange={e => setProfile(p => ({ ...p, sessaoTimeout: e.target.value }))}>
+                      <select value={sysConfig.sessaoTimeout}
+                        onChange={e => setSysConfig(p => ({ ...p, sessaoTimeout: e.target.value }))}>
                         <option value="15">15 minutos</option>
                         <option value="30">30 minutos</option>
                         <option value="60">1 hora</option>
@@ -290,8 +340,8 @@ export default function AdminConfiguracoes() {
                   <ToggleRow
                     label="Registro de ações"
                     desc="Manter histórico de todas as ações administrativas."
-                    checked={profile.registroAcoes}
-                    onChange={v => setProfile(p => ({ ...p, registroAcoes: v }))}
+                    checked={sysConfig.registroAcoes}
+                    onChange={v => setSysConfig(p => ({ ...p, registroAcoes: v }))}
                   />
                 </div>
 
@@ -301,8 +351,8 @@ export default function AdminConfiguracoes() {
                     <label className="field-label">Fuso horário</label>
                     <p className="cfg-toggle-desc" style={{ marginBottom: 8 }}>Defina o fuso horário da área administrativa.</p>
                     <div className="input-shell">
-                      <select value={profile.fusoHorario}
-                        onChange={e => setProfile(p => ({ ...p, fusoHorario: e.target.value }))}>
+                      <select value={sysConfig.fusoHorario}
+                        onChange={e => setSysConfig(p => ({ ...p, fusoHorario: e.target.value }))}>
                         <option value="America/Sao_Paulo">(GMT-03:00) Brasília</option>
                         <option value="America/Manaus">(GMT-04:00) Manaus</option>
                         <option value="America/Belem">(GMT-03:00) Belém</option>
@@ -316,8 +366,8 @@ export default function AdminConfiguracoes() {
                     <label className="field-label">Idioma</label>
                     <p className="cfg-toggle-desc" style={{ marginBottom: 8 }}>Selecione o idioma da área administrativa.</p>
                     <div className="input-shell">
-                      <select value={profile.idioma}
-                        onChange={e => setProfile(p => ({ ...p, idioma: e.target.value }))}>
+                      <select value={sysConfig.idioma}
+                        onChange={e => setSysConfig(p => ({ ...p, idioma: e.target.value }))}>
                         <option value="pt-BR">Português (Brasil)</option>
                         <option value="en">English</option>
                         <option value="es">Español</option>

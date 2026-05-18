@@ -7,6 +7,7 @@ import Header from '../components/Header.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import { useSettings } from '../contexts/SettingsContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import { api } from '../services/api.js';
 
 const PROFISSOES = [
   'Psicólogo','Nutricionista','Médico','Fonoaudiólogo','Fisioterapeuta',
@@ -38,17 +39,27 @@ function SectionHeader({ icon: Icon, color, title, subtitle }) {
 
 /* ── Modal de alterar senha ── */
 function SenhaModal({ onClose }) {
-  const [form, setForm] = useState({ atual: '', nova: '', confirma: '' });
-  const [erro, setErro] = useState('');
-  const [ok, setOk] = useState(false);
+  const [form,    setForm]    = useState({ atual: '', nova: '', confirma: '' });
+  const [erro,    setErro]    = useState('');
+  const [ok,      setOk]      = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
     if (!form.atual || !form.nova) { setErro('Preencha todos os campos.'); return; }
     if (form.nova.length < 6)      { setErro('Nova senha: mínimo 6 caracteres.'); return; }
     if (form.nova !== form.confirma){ setErro('As senhas não coincidem.'); return; }
-    setErro(''); setOk(true);
-    setTimeout(onClose, 1200);
+    setErro('');
+    setLoading(true);
+    try {
+      await api.alterarSenha({ senhaAtual: form.atual, novaSenha: form.nova });
+      setOk(true);
+      setTimeout(onClose, 1200);
+    } catch (err) {
+      setErro(err.message || 'Erro ao alterar senha.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -76,7 +87,7 @@ function SenhaModal({ onClose }) {
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'flex-end', paddingTop:4 }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancelar</button>
-                <button type="submit" className="btn btn-primary btn-sm">Salvar senha</button>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={loading}>{loading ? 'Salvando…' : 'Salvar senha'}</button>
               </div>
             </form>
         }

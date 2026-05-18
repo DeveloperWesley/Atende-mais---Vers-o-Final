@@ -2,8 +2,8 @@ import { CheckCircle, Eye, EyeOff, Lock, Moon, ShieldCheck, Sun } from 'lucide-r
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { LogoMark } from '../components/Sidebar.jsx';
-import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import { api } from '../services/api.js';
 
 const REQS = [
   { key:'len',     label:'Mínimo 8 caracteres', test: v => v.length >= 8       },
@@ -14,54 +14,43 @@ const REQS = [
 ];
 
 export default function RedefinirSenha() {
-  const { usuarios, setUsuarios } = useAuth();
-  const { theme, toggleTheme }    = useTheme();
-  const navigate                  = useNavigate();
-  const [params]                  = useSearchParams();
-  const token                     = params.get('token');
+  const { theme, toggleTheme } = useTheme();
+  const navigate               = useNavigate();
+  const [params]               = useSearchParams();
+  const token                  = params.get('token');
 
-  const [status,   setStatus]   = useState('validating'); // validating | valid | invalid | success
-  const [userId,   setUserId]   = useState(null);
-  const [nova,     setNova]     = useState('');
-  const [confirma, setConfirma] = useState('');
-  const [show,     setShow]     = useState(false);
-  const [loading,  setLoading]  = useState(false);
-  const [erro,     setErro]     = useState('');
+  const [status,   setStatus]  = useState('validating');
+  const [nova,     setNova]    = useState('');
+  const [confirma, setConfirma]= useState('');
+  const [show,     setShow]    = useState(false);
+  const [loading,  setLoading] = useState(false);
+  const [erro,     setErro]    = useState('');
 
-  /* Valida o token ao carregar */
+  /* Token da URL é suficiente — valida ao submeter */
   useEffect(() => {
     if (!token) { setStatus('invalid'); return; }
-    try {
-      const stored = localStorage.getItem('reset_token');
-      if (!stored) { setStatus('invalid'); return; }
-      const { token: t, userId: uid, expires } = JSON.parse(stored);
-      if (t !== token || Date.now() > expires) { setStatus('invalid'); return; }
-      setUserId(uid);
-      setStatus('valid');
-    } catch {
-      setStatus('invalid');
-    }
+    setStatus('valid');
   }, [token]);
 
   const reqs = REQS.map(r => ({ ...r, met: r.test(nova) }));
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!REQS.every(r => r.test(nova)))  { setErro('A senha não atende todos os requisitos.'); return; }
-    if (nova !== confirma)               { setErro('As senhas não coincidem.'); return; }
+    if (!REQS.every(r => r.test(nova))) { setErro('A senha não atende todos os requisitos.'); return; }
+    if (nova !== confirma)              { setErro('As senhas não coincidem.'); return; }
     setErro('');
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-
-    /* Atualiza senha no contexto (mock — no backend seria PATCH /auth/reset-password) */
-    if (setUsuarios) {
-      setUsuarios(prev => prev.map(u =>
-        u.id === userId ? { ...u, senha: nova } : u
-      ));
+    try {
+      await api.redefinirSenha({ token, novaSenha: nova });
+      setStatus('success');
+    } catch (err) {
+      setErro(err.message || 'Erro ao redefinir senha.');
+      if (err.message?.includes('inválido') || err.message?.includes('expirado')) {
+        setStatus('invalid');
+      }
+    } finally {
+      setLoading(false);
     }
-    localStorage.removeItem('reset_token');
-    setStatus('success');
-    setLoading(false);
   }
 
   /* ── Token inválido/expirado ── */

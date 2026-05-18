@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { LogoMark } from '../components/Sidebar.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import { api } from '../services/api.js';
 
 /* Gera código de 6 dígitos e simula envio (frontend-only) */
 function gerarCodigo() {
@@ -51,53 +52,56 @@ export default function Cadastro() {
     return erros;
   }
 
-  /* Etapa 1 → envia "e-mail" com código */
+  /* Etapa 1 → envia código via API */
   async function handleSubmit(e) {
     e.preventDefault();
     const erros = validar();
     if (Object.keys(erros).length) { setErrors(erros); return; }
     setErrors({});
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800)); /* simula latência */
-    const codigo = gerarCodigo();
-    setCodigoReal(codigo);
-    console.info(`[DEV] Código de verificação para ${form.email}: ${codigo}`);
-    setLoading(false);
-    setEtapa(2);
-  }
-
-  /* Etapa 2 → valida código e finaliza cadastro */
-  async function handleVerificar(e) {
-    e.preventDefault();
-    if (codigoInput.trim() !== codigoReal) {
-      setCodigoErro('Código incorreto. Verifique seu e-mail e tente novamente.');
-      return;
-    }
-    setLoading(true);
     try {
-      await registrar({
+      const res = await api.enviarCodigo({
         nome: form.nome, email: form.email, senha: form.senha,
         especialidade: form.especialidade, sexo: form.sexo,
       });
-      setEtapa(3);
+      // Em dev, o backend retorna o código diretamente
+      if (res?.codigo) setCodigoReal(res.codigo);
+      setEtapa(2);
     } catch (err) {
-      setCodigoErro(err.message || 'Erro ao criar conta.');
+      setErrors({ geral: err.message || 'Erro ao enviar código.' });
     } finally {
       setLoading(false);
     }
   }
 
-  /* Reenviar código */
+  /* Etapa 2 → verifica código via API */
+  async function handleVerificar(e) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await api.verificarCodigo({ email: form.email, codigo: codigoInput.trim() });
+      setEtapa(3);
+    } catch (err) {
+      setCodigoErro(err.message || 'Código incorreto.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* Reenviar código via API */
   async function handleReenviar() {
     setReenviando(true);
-    await new Promise(r => setTimeout(r, 1000));
-    const novo = gerarCodigo();
-    setCodigoReal(novo);
-    setCodigoInput('');
-    setCodigoErro('');
-    setReenvios(n => n + 1);
-    console.info(`[DEV] Novo código para ${form.email}: ${novo}`);
-    setReenviando(false);
+    try {
+      const res = await api.reenviarCodigo(form.email);
+      if (res?.codigo) setCodigoReal(res.codigo);
+      setCodigoInput('');
+      setCodigoErro('');
+      setReenvios(n => n + 1);
+    } catch (err) {
+      setCodigoErro(err.message || 'Erro ao reenviar código.');
+    } finally {
+      setReenviando(false);
+    }
   }
 
   return (
