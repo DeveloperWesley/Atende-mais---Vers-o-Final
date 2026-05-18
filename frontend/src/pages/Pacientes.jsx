@@ -1,8 +1,10 @@
 import { Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Header from '../components/Header.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import { useData } from '../contexts/DataContext.jsx';
+import { useSettings } from '../contexts/SettingsContext.jsx';
 
 const PER_PAGE = 5;
 
@@ -115,8 +117,10 @@ function PacienteForm({ initial, onCancel, onSubmit }) {
 
 export default function Pacientes() {
   const { pacientes, addPaciente, updatePaciente, deletePaciente } = useData();
-  const [search, setSearch] = useState('');
-  const [page, setPage]     = useState(1);
+  const { settings } = useSettings();
+  const [search,    setSearch]    = useState('');
+  const [page,      setPage]      = useState(1);
+  const [confirmId, setConfirmId] = useState(null);
   const [modal, setModal]   = useState({ open: false, editing: null });
 
   const filtered = pacientes.filter((p) => {
@@ -191,7 +195,7 @@ export default function Pacientes() {
                             <Pencil size={15} />
                           </button>
                           <button className="icon-btn icon-btn-danger" title="Excluir"
-                            onClick={() => deletePaciente(p.id)}>
+                            onClick={() => settings.confirmarExclusao ? setConfirmId(p.id) : deletePaciente(p.id)}>
                             <Trash2 size={15} />
                           </button>
                         </div>
@@ -225,6 +229,15 @@ export default function Pacientes() {
           </div>
         </div>
       </div>
+
+      {confirmId !== null && (
+        <ConfirmDialog
+          title="Excluir paciente?"
+          message="Todos os dados deste paciente serão removidos. Esta ação não pode ser desfeita."
+          onConfirm={() => { deletePaciente(confirmId); setConfirmId(null); }}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
 
       {modal.open && (
         <div className="modal-backdrop">

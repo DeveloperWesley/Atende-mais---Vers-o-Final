@@ -177,6 +177,26 @@ export default function Login() {
                 {!loading && <span style={{ fontSize: '1.1em' }}>→</span>}
               </button>
 
+              {/* Logins de exemplo */}
+              <div className="login-examples">
+                <span className="login-examples-label">Entrar como:</span>
+                <div className="login-examples-row">
+                  {[
+                    { label: 'Profissional', email: 'joao@atende.com',  senha: 'senha123' },
+                    { label: 'Admin',        email: 'admin@atende.com', senha: 'admin123' },
+                  ].map(u => (
+                    <button
+                      key={u.email}
+                      type="button"
+                      className="login-example-btn"
+                      onClick={() => setCredentials({ email: u.email, senha: u.senha })}
+                    >
+                      {u.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <p className="auth-link-row">
                 Ainda não tem uma conta?{' '}
                 <Link to="/cadastro">Criar conta →</Link>

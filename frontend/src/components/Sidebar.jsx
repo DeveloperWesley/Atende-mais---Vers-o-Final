@@ -1,7 +1,8 @@
-import { BarChart2, CalendarDays, ChevronDown, LayoutDashboard, LogOut, Receipt, Settings, Users, X } from 'lucide-react';
+import { BarChart2, CalendarDays, LayoutDashboard, LogOut, Receipt, Settings, Users, X } from 'lucide-react';
 import { useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useSettings } from '../contexts/SettingsContext.jsx';
 import { useSidebar } from '../contexts/SidebarContext.jsx';
 
 export function LogoMark({ size = 36, glow = false }) {
@@ -74,7 +75,8 @@ function getInitials(nome = '') {
 }
 
 export default function Sidebar() {
-  const { logout, user } = useAuth();
+  const { logout, user, impersonating } = useAuth();
+  const { settings, displayName } = useSettings();
   const navigate = useNavigate();
   const { open, close } = useSidebar();
 
@@ -171,13 +173,17 @@ export default function Sidebar() {
           </button>
         </nav>
 
-        <div className="user-card">
-          <div className="avatar">{getInitials(user?.nome)}</div>
+        <div className="user-card user-card-static">
+          {!impersonating && settings.avatar
+            ? <img src={settings.avatar} alt="Avatar" className="avatar avatar-img" />
+            : <div className="avatar" style={impersonating ? { background: '#7c3aed' } : {}}>
+                {getInitials(impersonating?.nome || settings.nome || user?.nome)}
+              </div>
+          }
           <div className="user-card-info">
-            <strong>{user?.nome || '—'}</strong>
-            <small>{isAdmin ? 'Administrador' : user?.especialidade || 'Profissional'}</small>
+            <strong>{impersonating ? impersonating.nome : displayName}</strong>
+            <small>{impersonating ? impersonating.especialidade : (isAdmin ? 'Administrador' : settings.profissao || user?.especialidade || 'Profissional')}</small>
           </div>
-          <ChevronDown size={15} color="var(--text-light)" />
         </div>
       </aside>
     </>

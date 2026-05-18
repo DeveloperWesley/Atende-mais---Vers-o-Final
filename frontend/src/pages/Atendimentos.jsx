@@ -5,9 +5,11 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AtendimentoForm from '../components/AtendimentoForm.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Header from '../components/Header.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import { useData } from '../contexts/DataContext.jsx';
+import { useSettings } from '../contexts/SettingsContext.jsx';
 
 const PER_PAGE = 5;
 const fmt = (n) => new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(n);
@@ -132,6 +134,8 @@ export default function Atendimentos() {
   const [periodEnd,   setPeriodEnd]   = useState(defaultPeriod.end);
   const [page,        setPage]        = useState(1);
   const [modal,       setModal]       = useState({ open:false, editing:null });
+  const [confirmId,   setConfirmId]   = useState(null);
+  const { settings } = useSettings();
   const [sortCol,     setSortCol]     = useState('data');
   const [sortDir,     setSortDir]     = useState('desc');
 
@@ -350,7 +354,8 @@ export default function Atendimentos() {
                             <button className="icon-btn" title="Editar" onClick={()=>setModal({open:true,editing:a})}>
                               <Pencil size={15}/>
                             </button>
-                            <button className="icon-btn icon-btn-danger" title="Excluir" onClick={()=>deleteAtendimento(a.id)}>
+                            <button className="icon-btn icon-btn-danger" title="Excluir"
+                              onClick={() => settings.confirmarExclusao ? setConfirmId(a.id) : deleteAtendimento(a.id)}>
                               <Trash2 size={15}/>
                             </button>
                           </div>
@@ -423,6 +428,15 @@ export default function Atendimentos() {
 
         </div>
       </div>
+
+      {confirmId !== null && (
+        <ConfirmDialog
+          title="Excluir atendimento?"
+          message="Esta ação não pode ser desfeita."
+          onConfirm={() => { deleteAtendimento(confirmId); setConfirmId(null); }}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
 
       {modal.open && (
         <div className="modal-backdrop">

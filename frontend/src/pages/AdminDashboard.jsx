@@ -1,207 +1,311 @@
-import { CheckCircle, Download, FileSpreadsheet, Search, Users, XCircle } from 'lucide-react';
+import {
+  Check, ChevronDown, MoreHorizontal, Play,
+  Search, Shield, SlidersHorizontal, UserCheck,
+  UserMinus, UserX, Users, X
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
-import AtendimentoTable from '../components/AtendimentoTable.jsx';
-import CardResumo from '../components/CardResumo.jsx';
-import Input from '../components/Input.jsx';
-import Sidebar from '../components/Sidebar.jsx';
+import { useNavigate } from 'react-router-dom';
+import AdminSidebar from '../components/AdminSidebar.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import Header from '../components/Header.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
-const atendimentosAdmin = [
-  { id: 1, data: '16/05/2024', paciente: 'Maria Oliveira', pagador: 'Maria Oliveira', valor: 'R$ 250,00', precisaDoc: true },
-  { id: 2, data: '15/05/2024', paciente: 'João Souza',    pagador: 'João Souza',    valor: 'R$ 180,00', precisaDoc: false },
-  { id: 3, data: '14/05/2024', paciente: 'Ana Paula Lima', pagador: 'Plano Saúde ABC', valor: 'R$ 300,00', precisaDoc: true },
-  { id: 4, data: '13/05/2024', paciente: 'Carlos Eduardo', pagador: 'Carlos Eduardo', valor: 'R$ 150,00', precisaDoc: false }
+const PER_PAGE = 7;
+
+const PROFISSOES = [
+  'Psicologia','Nutrição','Fisioterapia','Medicina','Fonoaudiologia',
+  'Odontologia','Terapia Ocupacional','Enfermagem','Biomedicina',
+  'Farmácia','Personal trainer','Outro',
 ];
 
-const STATUS_LABEL = { ativo: 'Ativo', pendente: 'Pendente', inativo: 'Inativo' };
-const STATUS_CLASS = { ativo: 'badge badge-active', pendente: 'badge badge-pending', inativo: 'badge badge-inactive' };
+const PALETTE = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#0891b2','#9333ea','#16a34a'];
+function avatarColor(nome = '') {
+  let h = 0; for (let i = 0; i < nome.length; i++) h = nome.charCodeAt(i) + ((h << 5) - h);
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+function getInitials(nome = '') {
+  const p = nome.trim().split(' ').filter(Boolean);
+  if (!p.length) return '?';
+  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
+  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  function addToast(msg, type = 'success') {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }
+  return { toasts, addToast };
+}
+
+function ToastList({ toasts }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="admin-toasts">
+      {toasts.map(t => (
+        <div key={t.id} className={`admin-toast admin-toast-${t.type}`}>{t.msg}</div>
+      ))}
+    </div>
+  );
+}
+
+function ActionMenu({ onDisable, onReactivate }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="icon-btn" onClick={() => setOpen(o => !o)}>
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
+          <div className="admin-action-menu">
+            {onDisable    && <button onClick={() => { onDisable();    setOpen(false); }}>Desativar</button>}
+            {onReactivate && <button onClick={() => { onReactivate(); setOpen(false); }}>Reativar</button>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const map = {
+    ativo:    { cls: 'admin-badge-green',  label: 'Ativo'      },
+    pendente: { cls: 'admin-badge-yellow', label: 'Pendente'   },
+    inativo:  { cls: 'admin-badge-red',    label: 'Desativado' },
+  };
+  const { cls, label } = map[status] || map.inativo;
+  return (
+    <span className={`admin-status-badge ${cls}`}>
+      <span className="admin-badge-dot" />{label}
+    </span>
+  );
+}
 
 export default function AdminDashboard() {
-  const { usuarios, aprovarUsuario, rejeitarUsuario } = useAuth();
-  const [aba, setAba] = useState('atendimentos');
-  const [busca, setBusca] = useState('');
+  const {
+    usuarios, aprovarUsuario, rejeitarUsuario,
+    desativarUsuario, reativarUsuario, startImpersonation,
+  } = useAuth();
+  const navigate = useNavigate();
+  const { toasts, addToast } = useToast();
 
-  const profissionais = useMemo(() => usuarios.filter((u) => u.perfil === 'profissional'), [usuarios]);
-  const pendentes = useMemo(() => profissionais.filter((u) => u.status === 'pendente'), [profissionais]);
+  const [search,       setSearch]  = useState('');
+  const [filterStatus, setFStatus] = useState('');
+  const [filterProf,   setFProf]   = useState('');
+  const [page,         setPage]    = useState(1);
+  const [confirm,      setConfirm] = useState(null);
 
-  const usuariosFiltrados = useMemo(
-    () => profissionais.filter((u) => u.nome.toLowerCase().includes(busca.toLowerCase())),
-    [profissionais, busca]
-  );
+  const professionals = useMemo(() => usuarios.filter(u => u.perfil !== 'admin'), [usuarios]);
+
+  const countAtivos    = professionals.filter(u => u.status === 'ativo').length;
+  const countPendentes = professionals.filter(u => u.status === 'pendente').length;
+  const countInativos  = professionals.filter(u => u.status === 'inativo').length;
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return professionals.filter(u =>
+      (!q            || u.nome.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+      (!filterStatus || u.status === filterStatus) &&
+      (!filterProf   || u.especialidade === filterProf)
+    );
+  }, [professionals, search, filterStatus, filterProf]);
+
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  function clearFilters() { setSearch(''); setFStatus(''); setFProf(''); setPage(1); }
+
+  function handleAprovar(u)  { aprovarUsuario(u.id);  addToast(`${u.nome} aprovado com sucesso!`, 'success'); }
+  function handleRejeitar(u) { rejeitarUsuario(u.id); addToast(`Cadastro de ${u.nome} recusado.`, 'error'); }
+  function handleReativar(u) { reativarUsuario(u.id); addToast(`${u.nome} reativado com sucesso!`, 'success'); }
+
+  function handleDesativar(u) {
+    setConfirm({
+      title: 'Desativar usuário?',
+      message: `${u.nome} não conseguirá fazer login no sistema.`,
+      onConfirm: () => { desativarUsuario(u.id); addToast(`${u.nome} desativado.`, 'warning'); setConfirm(null); },
+    });
+  }
+
+  function handleAcessar(u) { startImpersonation(u); navigate('/dashboard'); }
 
   return (
     <div className="app-shell">
-      <Sidebar />
-
+      <AdminSidebar />
       <div className="content-area">
-        <header className="top-bar">
-          <div className="top-bar-greeting">
-            <h1>Área administrativa</h1>
-            <p>Gerencie usuários e extraia dados para NF, Receita Saúde e IRPF.</p>
-          </div>
-          <div className="top-bar-actions">
-            <button className="btn btn-ghost btn-md">
-              <Download size={16} /> CSV
-            </button>
-            <button className="btn btn-secondary btn-md">
-              <FileSpreadsheet size={16} /> Excel
-            </button>
-          </div>
-        </header>
+        <Header title="Administração" subtitle="Gerencie usuários e controle o acesso ao sistema." />
 
         <div className="main-content">
-          {/* Summary */}
-          <section className="summary-grid admin-summary" aria-label="Resumo administrativo">
-            <CardResumo
-              icon={Users}
-              label="Profissionais ativos"
-              value={String(profissionais.filter((u) => u.status === 'ativo').length)}
-              helper="Com acesso liberado"
-              tone="blue"
-            />
-            <CardResumo
-              icon={FileSpreadsheet}
-              label="Atendimentos"
-              value="36"
-              helper="Competência atual"
-              tone="green"
-            />
-            <CardResumo
-              icon={Users}
-              label="Aguardando aprovação"
-              value={String(pendentes.length)}
-              helper="Novos cadastros"
-              helperType="warning"
-              tone="orange"
-            />
-          </section>
 
-          {/* Tabs */}
-          <div className="admin-tabs">
-            <button className={`admin-tab${aba === 'atendimentos' ? ' active' : ''}`} onClick={() => setAba('atendimentos')}>
-              Atendimentos
-            </button>
-            <button className={`admin-tab${aba === 'usuarios' ? ' active' : ''}`} onClick={() => setAba('usuarios')}>
-              Usuários
-              {pendentes.length > 0 && <span className="tab-count">{pendentes.length}</span>}
-            </button>
+          {/* ── Cards superiores ── */}
+          <div className="admin-stats-row">
+            <div className="surface-card admin-stat-card">
+              <div className="admin-stat-icon" style={{ background:'linear-gradient(135deg,#6c5ce7,#a855f7)' }}>
+                <UserCheck size={22} color="#fff" />
+              </div>
+              <div className="admin-stat-info">
+                <strong>{countAtivos}</strong>
+                <span>Usuários ativos</span>
+                <small style={{ color:'var(--green)', fontWeight:600 }}>Acessos liberados</small>
+              </div>
+            </div>
+
+            <div className="surface-card admin-stat-card">
+              <div className="admin-stat-icon" style={{ background:'linear-gradient(135deg,#d97706,#f59e0b)' }}>
+                <Users size={22} color="#fff" />
+              </div>
+              <div className="admin-stat-info">
+                <strong>{countPendentes}</strong>
+                <span>Pendentes de aprovação</span>
+                <small style={{ color:'var(--orange)', fontWeight:600 }}>Aguardando aprovação</small>
+              </div>
+            </div>
+
+            <div className="surface-card admin-stat-card">
+              <div className="admin-stat-icon" style={{ background:'linear-gradient(135deg,#dc2626,#ef4444)' }}>
+                <UserX size={22} color="#fff" />
+              </div>
+              <div className="admin-stat-info">
+                <strong>{countInativos}</strong>
+                <span>Usuários desativados</span>
+                <small style={{ color:'var(--red)', fontWeight:600 }}>Inativos no sistema</small>
+              </div>
+            </div>
           </div>
 
-          {/* Atendimentos tab */}
-          {aba === 'atendimentos' && (
-            <>
-              <section className="filters-card surface-card">
-                <Input
-                  label="Profissional, paciente ou pagador"
-                  icon={Search}
-                  placeholder="Buscar"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                />
-                <Input label="Período inicial" type="date" />
-                <Input label="Período final" type="date" />
-                <Input label="Competência" placeholder="05/2024" />
-              </section>
+          {/* ── Filtros ── */}
+          <div className="surface-card admin-filter-card">
+            <div className="admin-filter-bar">
+              <span className="search-bar admin-search">
+                <Search size={15} />
+                <input placeholder="Digite o nome ou e-mail do profissional..."
+                  value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+              </span>
 
-              <div className="admin-grid">
-                <article className="data-card surface-card">
-                  <div className="section-title-row">
-                    <h2>Profissionais</h2>
-                  </div>
-                  <div className="professional-list">
-                    {profissionais
-                      .filter((u) => u.status === 'ativo' && u.nome.toLowerCase().includes(busca.toLowerCase()))
-                      .map((u) => (
-                        <button className="professional-row" key={u.id}>
-                          <span>
-                            <strong>{u.nome}</strong>
-                            <small>{u.especialidade}</small>
-                          </span>
-                          <span style={{ textAlign: 'right' }}>
-                            <strong>—</strong>
-                            <small>Ver atendimentos</small>
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                </article>
-
-                <article className="data-card surface-card">
-                  <div className="section-title-row">
-                    <h2>Atendimentos</h2>
-                    <button className="inline-action">Exportar</button>
-                  </div>
-                  <AtendimentoTable atendimentos={atendimentosAdmin} compact />
-                </article>
-              </div>
-            </>
-          )}
-
-          {/* Usuários tab */}
-          {aba === 'usuarios' && (
-            <article className="data-card surface-card">
-              <div className="section-title-row">
-                <h2>Usuários cadastrados</h2>
-                <div style={{ width: 220 }}>
-                  <Input
-                    placeholder="Buscar por nome…"
-                    icon={Search}
-                    value={busca}
-                    onChange={(e) => setBusca(e.target.value)}
-                  />
-                </div>
+              <div className="desp-filter-select-wrap" style={{ minWidth: 160 }}>
+                <SlidersHorizontal size={13} className="desp-filter-icon" />
+                <select className="desp-filter-select" value={filterStatus}
+                  onChange={e => { setFStatus(e.target.value); setPage(1); }}>
+                  <option value="">Status: Todos</option>
+                  <option value="ativo">Ativo</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="inativo">Desativado</option>
+                </select>
+                <ChevronDown size={12} className="desp-filter-chevron" />
               </div>
 
-              <div className="table-wrap">
-                <table className="users-table">
-                  <thead>
-                    <tr>
-                      <th>Nome</th>
-                      <th>E-mail</th>
-                      <th>Especialidade</th>
-                      <th>Cadastro</th>
-                      <th>Status</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usuariosFiltrados.map((u) => (
-                      <tr key={u.id}>
-                        <td>{u.nome}</td>
-                        <td>{u.email}</td>
-                        <td>{u.especialidade || '—'}</td>
-                        <td>{u.criadoEm}</td>
-                        <td><span className={STATUS_CLASS[u.status]}>{STATUS_LABEL[u.status]}</span></td>
-                        <td>
-                          <div className="action-row">
-                            {u.status !== 'ativo' && (
-                              <button className="approve-btn" onClick={() => aprovarUsuario(u.id)}>
-                                <CheckCircle size={13} /> Aprovar
-                              </button>
-                            )}
-                            {u.status !== 'inativo' && (
-                              <button className="reject-btn" onClick={() => rejeitarUsuario(u.id)}>
-                                <XCircle size={13} /> {u.status === 'pendente' ? 'Rejeitar' : 'Desativar'}
-                              </button>
-                            )}
+              <div className="desp-filter-select-wrap" style={{ minWidth: 180 }}>
+                <Shield size={13} className="desp-filter-icon" />
+                <select className="desp-filter-select" value={filterProf}
+                  onChange={e => { setFProf(e.target.value); setPage(1); }}>
+                  <option value="">Profissão: Todas</option>
+                  {PROFISSOES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <ChevronDown size={12} className="desp-filter-chevron" />
+              </div>
+
+              <button className="btn btn-ghost btn-sm" onClick={clearFilters}>
+                <X size={14} /> Limpar filtros
+              </button>
+            </div>
+          </div>
+
+          {/* ── Tabela ── */}
+          <div className="surface-card admin-table-card">
+            <div className="table-wrap">
+              <table className="atendimento-table admin-table">
+                <thead>
+                  <tr>
+                    <th>Profissional</th>
+                    <th>Profissão</th>
+                    <th>Status</th>
+                    <th>Plano</th>
+                    <th>Último acesso</th>
+                    <th>Atendimentos</th>
+                    <th>Faturamento</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map(u => (
+                    <tr key={u.id}>
+                      <td className="td-main">
+                        <div className="at-patient-cell">
+                          <span className="at-avatar" style={{ background: avatarColor(u.nome) }}>
+                            {getInitials(u.nome)}
+                          </span>
+                          <div>
+                            <div style={{ fontWeight:600 }}>{u.nome}</div>
+                            <div style={{ fontSize:'0.75rem', color:'var(--text-muted)' }}>{u.email}</div>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {usuariosFiltrados.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                          Nenhum usuário encontrado.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                        </div>
+                      </td>
+                      <td data-label="Profissão" className="table-cell-muted">{u.especialidade}</td>
+                      <td data-label="Status"><StatusBadge status={u.status} /></td>
+                      <td data-label="Plano">
+                        <span className={`admin-plan-badge ${u.plano === 'Premium' ? 'admin-plan-premium' : 'admin-plan-basic'}`}>
+                          {u.plano}
+                        </span>
+                      </td>
+                      <td data-label="Último acesso" className="table-cell-muted">{u.ultimoAcesso}</td>
+                      <td data-label="Atendimentos" style={{ fontWeight:600 }}>{u.totalAtendimentos}</td>
+                      <td data-label="Faturamento" style={{ fontWeight:600 }}>{u.totalFaturamento}</td>
+                      <td className="td-actions">
+                        <div className="admin-actions-cell">
+                          <button className="btn admin-btn-profile btn-sm" onClick={() => handleAcessar(u)}>
+                            <UserCheck size={13} /> Acessar perfil
+                          </button>
+                          {u.status === 'pendente' && (<>
+                            <button className="icon-btn admin-btn-approve" title="Aprovar" onClick={() => handleAprovar(u)}><Check size={15} /></button>
+                            <button className="icon-btn admin-btn-reject"  title="Recusar" onClick={() => handleRejeitar(u)}><X size={15} /></button>
+                          </>)}
+                          {u.status === 'ativo' && (
+                            <ActionMenu onDisable={() => handleDesativar(u)} />
+                          )}
+                          {u.status === 'inativo' && (
+                            <button className="icon-btn admin-btn-reactivate" title="Reativar" onClick={() => handleReativar(u)}>
+                              <Play size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paginated.length === 0 && (
+                    <tr><td colSpan={8} style={{ textAlign:'center', padding:'40px', color:'var(--text-muted)' }}>
+                      Nenhum profissional encontrado
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="table-pagination">
+              <span className="pagination-info">
+                Mostrando {filtered.length === 0 ? 0 : Math.min((page-1)*PER_PAGE+1, filtered.length)} a {Math.min(page*PER_PAGE, filtered.length)} de {filtered.length} usuários
+              </span>
+              <div className="pagination-controls">
+                <button className="page-btn" disabled={page===1} onClick={() => setPage(page-1)}>‹</button>
+                {Array.from({ length: totalPages }, (_,i) => i+1).map(p => (
+                  <button key={p} className={`page-btn${p===page?' active':''}`} onClick={() => setPage(p)}>{p}</button>
+                ))}
+                <button className="page-btn" disabled={page===totalPages||totalPages===0} onClick={() => setPage(page+1)}>›</button>
               </div>
-            </article>
-          )}
+            </div>
+          </div>
+
         </div>
       </div>
+
+      {confirm && (
+        <ConfirmDialog title={confirm.title} message={confirm.message}
+          onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
+      )}
+      <ToastList toasts={toasts} />
     </div>
   );
 }

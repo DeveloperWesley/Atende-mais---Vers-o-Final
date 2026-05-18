@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Banknote, BarChart2, CalendarDays, ChevronDown, CreditCard, Download, ExternalLink, FileText, Paperclip, Pencil, Plus, QrCode, Search, SlidersHorizontal, Trash2, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import Header from '../components/Header.jsx';
 import Sidebar from '../components/Sidebar.jsx';
 import { useData } from '../contexts/DataContext.jsx';
+import { useSettings } from '../contexts/SettingsContext.jsx';
 
 const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 const PER_PAGE = 5;
@@ -348,6 +350,8 @@ export default function Despesas() {
   const [periodEnd,   setPeriodEnd]   = useState(defaultPeriod.end);
   const [page,        setPage]        = useState(1);
   const [modal,       setModal]       = useState({ open: false, editing: null });
+  const [confirmId,   setConfirmId]   = useState(null);
+  const { settings } = useSettings();
   const [sortCol,     setSortCol]     = useState('data');
   const [sortDir,     setSortDir]     = useState('desc');
 
@@ -570,7 +574,10 @@ export default function Despesas() {
                       <td className="td-actions">
                         <div className="table-actions">
                           <button className="icon-btn" title="Editar" onClick={() => setModal({ open: true, editing: d })}><Pencil size={15} /></button>
-                          <button className="icon-btn icon-btn-danger" title="Excluir" onClick={() => deleteDespesa(d.id)}><Trash2 size={15} /></button>
+                          <button className="icon-btn icon-btn-danger" title="Excluir"
+                            onClick={() => settings.confirmarExclusao ? setConfirmId(d.id) : deleteDespesa(d.id)}>
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -666,6 +673,15 @@ export default function Despesas() {
 
         </div>
       </div>
+
+      {confirmId !== null && (
+        <ConfirmDialog
+          title="Excluir despesa?"
+          message="Esta ação não pode ser desfeita."
+          onConfirm={() => { deleteDespesa(confirmId); setConfirmId(null); }}
+          onCancel={() => setConfirmId(null)}
+        />
+      )}
 
       {modal.open && (
         <DespesaModal initial={modal.editing} onClose={closeModal} onSave={handleSave} />
