@@ -27,7 +27,7 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [credentials, setCredentials] = useState({ email: '', senha: '' });
+  const [credentials, setCredentials] = useState({ email: 'joao@atende.com', senha: 'senha123' });
   const [showPass, setShowPass] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
