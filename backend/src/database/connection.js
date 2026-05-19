@@ -5,16 +5,24 @@ dotenv.config();
 
 const { Pool } = pg;
 
-export const pool = new Pool({
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
 });
 
-export function query(text, params) {
-  // TODO: salvar no PostgreSQL
-  return pool.query(text, params);
+pool.on('error', (err) => {
+  console.error('PostgreSQL pool error:', err.message);
+});
+
+export async function query(text, params) {
+  const client = await pool.connect();
+  try {
+    return await client.query(text, params);
+  } finally {
+    client.release();
+  }
 }
+
+export default pool;

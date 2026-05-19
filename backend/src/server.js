@@ -3,681 +3,571 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { query } from './database/connection.js';
 
 dotenv.config();
 
 const app    = express();
-const PORT   = process.env.PORT || 3333;
+const PORT   = process.env.PORT   || 3333;
 const SECRET = process.env.JWT_SECRET || 'atende-plus-secret-dev';
 
-/* ─── CORS ─────────────────────────────── */
+/* ─── CORS ──────────────────────────────────── */
 const allowedOrigins = [
-  'http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000',
+  'http://localhost:5173','http://localhost:5174','http://localhost:3000',
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
 ];
-app.use(cors({
-  origin: (origin, cb) => (!origin || allowedOrigins.includes(origin) ? cb(null, true) : cb(new Error('CORS bloqueado'))),
-  credentials: true,
-}));
+app.use(cors({ origin: (o, cb) => (!o || allowedOrigins.includes(o) ? cb(null,true) : cb(new Error('CORS bloqueado'))), credentials: true }));
 app.use(express.json({ limit: '5mb' }));
 
-/* ─── ARMAZENAMENTO EM MEMÓRIA ──────────── */
-const ADMIN_HASH = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'adm123', 10);
+/* ─── MEMÓRIA (apenas dados temporários) ─────── */
+let codigosVerificacao = [];
+let adminNotificacoes  = [];
+let adminConfig = { notificacoesEmail:true, aprovacaoAutomatica:false, sessaoTimeout:30, registroAcoes:true, fusoHorario:'America/Sao_Paulo', idioma:'pt-BR' };
 
-let usuarios = [{
-  id: 1,
-  nome:         process.env.ADMIN_NOME     || 'Wesley Melo',
-  email:        (process.env.ADMIN_EMAIL   || 'developerwesleymelo@gmail.com').toLowerCase(),
-  senha_hash:   ADMIN_HASH,
-  perfil:       'admin',
-  especialidade:'Administrador',
-  sexo:         'Masculino',
-  profissao:    'Administrador',
-  conselho:     '',
-  telefone:     '',
-  status:       'ativo',
-  plano:        'Admin',
-  ultimo_acesso: null,
-  created_at:   new Date('2024-01-01'),
-}];
+/* ─── HELPERS ────────────────────────────────── */
+const fmt = (n) => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n);
 
-let atendimentos        = [];
-let despesas            = [];
-let pacientes           = [];
-let resetTokens         = [];
-let codigosVerificacao  = [];  // pending registrations
-let notificacoes        = [];  // notifs para usuários (enviadas pelo admin)
-let adminNotificacoes   = [];  // notifs do sistema para o admin
-let relatorios          = [];  // histórico de relatórios gerados
-let adminConfig = {
-  notificacoesEmail:    true,
-  aprovacaoAutomatica:  false,
-  sessaoTimeout:        30,
-  registroAcoes:        true,
-  fusoHorario:          'America/Sao_Paulo',
-  idioma:               'pt-BR',
-};
-
-let nextId = 100;
-function uid() { return ++nextId; }
-
-/* ─── HELPERS ───────────────────────────── */
-const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
-
-function formatUser(u) {
-  const ats = atendimentos.filter(a => a.usuario_id === u.id);
-  return {
-    id:                 u.id,
-    nome:               u.nome,
-    email:              u.email,
-    perfil:             u.perfil,
-    especialidade:      u.especialidade || '',
-    sexo:               u.sexo || 'Não informar',
-    profissao:          u.profissao || u.especialidade || '',
-    conselho:           u.conselho || '',
-    telefone:           u.telefone || '',
-    status:             u.status,
-    plano:              u.plano,
-    ultimoAcesso:       u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR') : '—',
-    totalAtendimentos:  ats.length,
-    totalFaturamento:   fmt(ats.filter(a => a.recebimento === 'recebido').reduce((s, a) => s + a.valorNum, 0)),
-    criadoEm:           new Date(u.created_at).toISOString().slice(0, 10),
-  };
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('pt-BR');
+function fmtDate(val) {
+  if (!val) return '—';
+  const d = new Date(val);
+  return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`;
 }
 
 function parseDate(val) {
   if (!val) return null;
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
-    const [d, m, y] = val.split('/');
-    return `${y}-${m}-${d}`;
-  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) { const [d,m,y]=val.split('/'); return `${y}-${m}-${d}`; }
   return val;
+}
+
+function tempoRelativo(date) {
+  const diff = Date.now() - new Date(date).getTime();
+  const min  = Math.floor(diff/60000);
+  if (min<1)  return 'agora';
+  if (min<60) return `${min} min atrás`;
+  const h = Math.floor(min/60);
+  if (h<24)   return `${h} hora${h>1?'s':''} atrás`;
+  return `${Math.floor(h/24)} dia${Math.floor(h/24)>1?'s':''} atrás`;
+}
+
+function fmtUser(u, totalAtendimentos=0, totalFaturamento=0) {
+  return {
+    id: Number(u.id), nome: u.nome, email: u.email,
+    perfil: u.perfil, especialidade: u.especialidade||'',
+    sexo: u.sexo||'Não informar', profissao: u.profissao||u.especialidade||'',
+    conselho: u.conselho||'', telefone: u.telefone||'',
+    status: u.status, plano: u.plano,
+    ultimoAcesso: u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR') : '—',
+    totalAtendimentos, totalFaturamento: fmt(totalFaturamento),
+    criadoEm: u.created_at ? new Date(u.created_at).toISOString().slice(0,10) : '',
+  };
 }
 
 function fmtAtendimento(a) {
   return {
-    id: a.id, data: fmtDate(a.data), hora: a.hora || '—',
+    id: Number(a.id), data: fmtDate(a.data), hora: a.hora||'—',
     paciente: a.paciente, pagador: a.pagador,
-    cpfPaciente: a.cpfPaciente, cpfPagador: a.cpfPagador,
-    valorNum: a.valorNum, valor: fmt(a.valorNum),
+    cpfPaciente: a.cpf_paciente||a.cpfPaciente||'',
+    cpfPagador:  a.cpf_pagador ||a.cpfPagador ||'',
+    valorNum: Number(a.valor_num||a.valorNum||0),
+    valor: fmt(Number(a.valor_num||a.valorNum||0)),
     situacao: a.situacao, recebimento: a.recebimento,
-    documentacao: a.documentacao, nfStatus: a.nfStatus,
-    receitaSaude: a.receitaSaude, servico: a.servico,
-    formaPagamento: a.formaPagamento, precisaDoc: a.precisaDoc,
-    observacoes: a.observacoes || '',
+    documentacao: a.documentacao, nfStatus: a.nf_status||a.nfStatus||'pendente',
+    receitaSaude: a.receita_saude||a.receitaSaude||'pronto',
+    servico: a.servico, formaPagamento: a.forma_pagamento||a.formaPagamento||'PIX',
+    precisaDoc: Boolean(a.precisa_doc||a.precisaDoc),
+    pacienteTelefone: a.paciente_telefone||'',
+    pacienteEmail: a.paciente_email||'',
+    observacoes: a.observacoes||'',
   };
 }
 
 function fmtDespesa(d) {
   return {
-    id: d.id, data: fmtDate(d.data), descricao: d.descricao,
-    categoria: d.categoria, valorNum: d.valorNum, valor: fmt(d.valorNum),
-    formaPagamento: d.formaPagamento,
-    comprovante: Boolean(d.comprovanteUrl),
-    comprovanteUrl: d.comprovanteUrl || null,
+    id: Number(d.id), data: fmtDate(d.data), descricao: d.descricao,
+    categoria: d.categoria,
+    valorNum: Number(d.valor_num||d.valorNum||0),
+    valor: fmt(Number(d.valor_num||d.valorNum||0)),
+    formaPagamento: d.forma_pagamento||d.formaPagamento||'',
+    comprovante: Boolean(d.comprovante_url||d.comprovanteUrl),
+    comprovanteUrl: d.comprovante_url||d.comprovanteUrl||null,
   };
 }
 
 function fmtCpf(c) {
-  const d = (c || '').replace(/\D/g, '');
-  return d.length === 11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : c;
+  const d=(c||'').replace(/\D/g,'');
+  return d.length===11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4') : c;
 }
 
 function fmtPaciente(p) {
-  const ultimo = atendimentos
-    .filter(a => a.usuario_id === p.usuario_id && a.cpfPaciente === p.cpf)
-    .map(a => a.data).sort().reverse()[0];
-  return { id: p.id, nome: p.nome, cpf: fmtCpf(p.cpf), telefone: p.telefone || '', email: p.email || '', ultimoAtendimento: fmtDate(ultimo) };
+  return {
+    id: Number(p.id), nome: p.nome, cpf: fmtCpf(p.cpf),
+    telefone: p.telefone||'', email: p.email||'',
+    ultimoAtendimento: p.ultimo_atendimento ? fmtDate(p.ultimo_atendimento) : '—',
+  };
 }
 
 function fmtNotif(n) {
-  return {
-    id: n.id, texto: n.texto, tipo: n.tipo, lida: n.lida,
-    tempo: tempoRelativo(n.created_at),
-    created_at: n.created_at,
-  };
+  return { id:Number(n.id), texto:n.texto, tipo:n.tipo, lida:Boolean(n.lida), tempo:tempoRelativo(n.created_at) };
 }
 
-function tempoRelativo(date) {
-  const diff = Date.now() - new Date(date).getTime();
-  const min = Math.floor(diff / 60000);
-  if (min < 1)   return 'agora';
-  if (min < 60)  return `${min} min atrás`;
-  const h = Math.floor(min / 60);
-  if (h < 24)    return `${h} hora${h > 1 ? 's' : ''} atrás`;
-  return `${Math.floor(h / 24)} dia${Math.floor(h / 24) > 1 ? 's' : ''} atrás`;
+async function addUserNotif(usuario_id, texto, tipo='admin') {
+  try {
+    await query(
+      'INSERT INTO notificacoes(usuario_id,texto,tipo) SELECT $1,$2,$3 WHERE NOT EXISTS (SELECT 1 FROM notificacoes WHERE usuario_id=$1 AND texto=$2 AND lida=false)',
+      [Number(usuario_id), texto, tipo]
+    );
+  } catch(e) { console.error('addUserNotif:', e.message); }
 }
 
-function addAdminNotif(texto, tipo = 'sistema') {
-  adminNotificacoes.unshift({ id: uid(), texto, tipo, lida: false, created_at: new Date() });
+function addAdminNotif(texto, tipo='sistema') {
+  adminNotificacoes.unshift({ id: Date.now(), texto, tipo, lida:false, created_at: new Date() });
 }
 
-function addUserNotif(usuario_id, texto, tipo = 'admin') {
-  const userId = Number(usuario_id);
-  const existente = notificacoes.find(n => n.usuario_id === userId && n.texto === texto && !n.lida);
-  if (existente) return existente;
-
-  const nova = { id: uid(), usuario_id: userId, texto, tipo, lida: false, created_at: new Date() };
-  notificacoes.unshift(nova);
-  return nova;
-}
-
-function compactUserNotifs(usuario_id) {
-  const userId = Number(usuario_id);
-  const seen = new Set();
-  notificacoes = notificacoes.filter(n => {
-    if (n.usuario_id !== userId) return true;
-    if (n.lida) return true;
-    if (seen.has(n.texto)) return false;
-    seen.add(n.texto);
-    return true;
-  });
-}
-
-/* ─── MIDDLEWARE JWT ────────────────────── */
+/* ─── MIDDLEWARE JWT ─────────────────────────── */
 function autenticar(req, res, next) {
   const h = req.headers.authorization;
-  if (!h?.startsWith('Bearer ')) return res.status(401).json({ message: 'Token necessário.' });
+  if (!h?.startsWith('Bearer ')) return res.status(401).json({ message:'Token necessário.' });
   try {
     req.user = jwt.verify(h.slice(7), SECRET);
-
-    // Impersonação: admin pode agir como outro usuário via header
-    const impersonateId = req.headers['x-impersonate-id'];
-    if (impersonateId && req.user.perfil === 'admin') {
-      const alvo = usuarios.find(u => u.id === Number(impersonateId));
-      if (alvo) req.user = { ...req.user, id: Number(impersonateId), _impersonando: true };
-    }
-
+    const impId = req.headers['x-impersonate-id'];
+    if (impId && req.user.perfil==='admin') req.user = { ...req.user, id:Number(impId), _impersonando:true };
     next();
-  } catch {
-    res.status(401).json({ message: 'Token inválido ou expirado.' });
-  }
+  } catch { res.status(401).json({ message:'Token inválido ou expirado.' }); }
 }
 
 function apenasAdmin(req, res, next) {
-  // Permite acesso se o JWT original é de admin (mesmo quando impersonando)
-  const h = req.headers.authorization;
   try {
-    const payload = jwt.verify(h?.slice(7) || '', SECRET);
-    if (payload.perfil !== 'admin') return res.status(403).json({ message: 'Acesso restrito a administradores.' });
+    const p = jwt.verify((req.headers.authorization||'').slice(7), SECRET);
+    if (p.perfil!=='admin') return res.status(403).json({ message:'Acesso restrito.' });
     next();
-  } catch {
-    res.status(403).json({ message: 'Acesso restrito a administradores.' });
-  }
+  } catch { res.status(403).json({ message:'Acesso restrito.' }); }
 }
 
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    AUTH
-═══════════════════════════════════════════ */
-app.get('/health', (_, res) => res.json({ status: 'ok', mode: 'memory' }));
+════════════════════════════════════════════════ */
+app.get('/health', (_,res) => res.json({ status:'ok', mode:'postgresql' }));
 
-/* Login */
-app.post('/auth/login', async (req, res) => {
-  const { email, senha } = req.body;
-  if (!email || !senha) return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
-
-  const u = usuarios.find(x => x.email === email.toLowerCase().trim());
-  if (!u)                    return res.status(401).json({ message: 'E-mail ou senha incorretos.' });
-  if (u.status === 'pendente') return res.status(403).json({ message: 'Conta aguardando aprovação do administrador.' });
-  if (u.status === 'inativo')  return res.status(403).json({ message: 'Conta desativada. Entre em contato com o administrador.' });
-
-  const ok = await bcrypt.compare(senha, u.senha_hash);
-  if (!ok) return res.status(401).json({ message: 'E-mail ou senha incorretos.' });
-
-  u.ultimo_acesso = new Date();
-  const token = jwt.sign({ id: u.id, nome: u.nome, email: u.email, perfil: u.perfil }, SECRET, { expiresIn: '7d' });
-  res.json({ token, user: formatUser(u) });
+app.post('/auth/login', async (req,res) => {
+  try {
+    const { email, senha } = req.body;
+    if (!email||!senha) return res.status(400).json({ message:'E-mail e senha são obrigatórios.' });
+    const { rows } = await query('SELECT * FROM usuarios WHERE email=$1',[email.toLowerCase().trim()]);
+    const u = rows[0];
+    if (!u)                    return res.status(401).json({ message:'E-mail ou senha incorretos.' });
+    if (u.status==='pendente') return res.status(403).json({ message:'Conta aguardando aprovação do administrador.' });
+    if (u.status==='inativo')  return res.status(403).json({ message:'Conta desativada. Entre em contato com o administrador.' });
+    if (!await bcrypt.compare(senha, u.senha_hash)) return res.status(401).json({ message:'E-mail ou senha incorretos.' });
+    await query('UPDATE usuarios SET ultimo_acesso=NOW() WHERE id=$1',[u.id]);
+    const token = jwt.sign({ id:u.id, nome:u.nome, email:u.email, perfil:u.perfil, sexo:u.sexo }, SECRET, { expiresIn:'7d' });
+    res.json({ token, user: fmtUser(u) });
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Cadastro local direto: cria conta pendente para aprovação do admin */
-app.post('/auth/registrar', async (req, res) => {
-  const { nome, email, senha, especialidade, sexo } = req.body;
-  if (!nome || !email || !senha) return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' });
-  if (senha.length < 6) return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres.' });
-
-  const emailNorm = email.toLowerCase().trim();
-  if (usuarios.find(x => x.email === emailNorm)) {
-    return res.status(409).json({ message: 'Já existe uma conta com este e-mail.' });
-  }
-  codigosVerificacao = codigosVerificacao.filter(c => c.email !== emailNorm);
-
-  const senha_hash = await bcrypt.hash(senha, 10);
-  const novo = {
-    id: uid(), nome: nome.trim(), email: emailNorm, senha_hash,
-    perfil: 'profissional', especialidade: especialidade || '',
-    sexo: sexo || 'Não informar', profissao: especialidade || '',
-    conselho: '', telefone: '',
-    status: 'pendente', plano: 'Básico',
-    ultimo_acesso: null, created_at: new Date(),
-  };
-  usuarios.push(novo);
-
-  addAdminNotif(`${nome} aguarda aprovação de cadastro.`, 'pendente');
-
-  res.status(201).json({ message: 'Conta criada! Aguarde aprovação do administrador.' });
+app.post('/auth/registrar', async (req,res) => {
+  try {
+    const { nome, email, senha, especialidade, sexo } = req.body;
+    if (!nome||!email||!senha) return res.status(400).json({ message:'Nome, e-mail e senha são obrigatórios.' });
+    if (senha.length<6) return res.status(400).json({ message:'Senha deve ter pelo menos 6 caracteres.' });
+    const emailNorm = email.toLowerCase().trim();
+    const existe = await query('SELECT id FROM usuarios WHERE email=$1',[emailNorm]);
+    if (existe.rows.length) return res.status(409).json({ message:'Já existe uma conta com este e-mail.' });
+    const hash = await bcrypt.hash(senha, 10);
+    await query(
+      `INSERT INTO usuarios(nome,email,senha_hash,perfil,especialidade,sexo,profissao,status,plano)
+       VALUES($1,$2,$3,'profissional',$4,$5,$4,'pendente','Básico')`,
+      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar']
+    );
+    addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
+    res.status(201).json({ message:'Conta criada! Aguarde aprovação do administrador.' });
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao criar conta.' }); }
 });
 
-/* Etapa 1 do cadastro: valida dados e envia código */
-app.post('/auth/enviar-codigo', async (req, res) => {
-  const { nome, email, senha, especialidade, sexo } = req.body;
-  if (!nome || !email || !senha) return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' });
-  if (senha.length < 6) return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres.' });
-
-  const emailNorm = email.toLowerCase().trim();
-  if (usuarios.find(x => x.email === emailNorm))
-    return res.status(409).json({ message: 'Já existe uma conta com este e-mail.' });
-
-  // Remove código anterior se existir
-  codigosVerificacao = codigosVerificacao.filter(c => c.email !== emailNorm);
-
-  const codigo  = String(Math.floor(100000 + Math.random() * 900000));
-  const expires = Date.now() + 15 * 60 * 1000; // 15 min
-  codigosVerificacao.push({ email: emailNorm, codigo, expires, dados: { nome, senha, especialidade, sexo } });
-
-  // Em produção: enviar e-mail com o código
-  res.json({ message: 'Código enviado para o e-mail.', ...(process.env.NODE_ENV !== 'production' && { codigo }) });
+app.post('/auth/enviar-codigo', async (req,res) => {
+  try {
+    const { nome, email, senha, especialidade, sexo } = req.body;
+    if (!nome||!email||!senha) return res.status(400).json({ message:'Dados incompletos.' });
+    const emailNorm = email.toLowerCase().trim();
+    const existe = await query('SELECT id FROM usuarios WHERE email=$1',[emailNorm]);
+    if (existe.rows.length) return res.status(409).json({ message:'Já existe uma conta com este e-mail.' });
+    codigosVerificacao = codigosVerificacao.filter(c => c.email!==emailNorm);
+    const codigo  = String(Math.floor(100000+Math.random()*900000));
+    const expires = Date.now()+15*60*1000;
+    codigosVerificacao.push({ email:emailNorm, codigo, expires, dados:{nome,senha,especialidade,sexo} });
+    res.json({ message:'Código enviado.', ...(process.env.NODE_ENV!=='production'&&{codigo}) });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Etapa 2: verifica código e cria conta */
-app.post('/auth/verificar-codigo', async (req, res) => {
-  const { email, codigo } = req.body;
-  const emailNorm = (email || '').toLowerCase().trim();
-
-  const registro = codigosVerificacao.find(c => c.email === emailNorm && !c.usado);
-  if (!registro) return res.status(400).json({ message: 'Código expirado ou não encontrado. Solicite um novo.' });
-  if (Date.now() > registro.expires) return res.status(400).json({ message: 'Código expirado. Solicite um novo.' });
-  if (registro.codigo !== codigo) return res.status(400).json({ message: 'Código incorreto.' });
-
-  registro.usado = true;
-
-  const { nome, senha, especialidade, sexo } = registro.dados;
-  const senha_hash = await bcrypt.hash(senha, 10);
-  const novo = {
-    id: uid(), nome: nome.trim(), email: emailNorm, senha_hash,
-    perfil: 'profissional', especialidade: especialidade || '',
-    sexo: sexo || 'Não informar', profissao: especialidade || '',
-    conselho: '', telefone: '',
-    status: 'pendente', plano: 'Básico',
-    ultimo_acesso: null, created_at: new Date(),
-  };
-  usuarios.push(novo);
-
-  // Notificação automática para o admin
-  addAdminNotif(`${nome} aguarda aprovação de cadastro.`, 'pendente');
-
-  res.status(201).json({ message: 'Conta criada! Aguarde aprovação do administrador.' });
+app.post('/auth/verificar-codigo', async (req,res) => {
+  try {
+    const { email, codigo } = req.body;
+    const emailNorm = (email||'').toLowerCase().trim();
+    const reg = codigosVerificacao.find(c => c.email===emailNorm&&!c.usado);
+    if (!reg||Date.now()>reg.expires) return res.status(400).json({ message:'Código expirado.' });
+    if (reg.codigo!==codigo) return res.status(400).json({ message:'Código incorreto.' });
+    reg.usado = true;
+    const { nome, senha, especialidade, sexo } = reg.dados;
+    const hash = await bcrypt.hash(senha, 10);
+    await query(
+      `INSERT INTO usuarios(nome,email,senha_hash,perfil,especialidade,sexo,profissao,status,plano)
+       VALUES($1,$2,$3,'profissional',$4,$5,$4,'pendente','Básico')`,
+      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar']
+    );
+    addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
+    res.status(201).json({ message:'Conta criada! Aguarde aprovação.' });
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Reenviar código */
-app.post('/auth/reenviar-codigo', (req, res) => {
-  const emailNorm = (req.body.email || '').toLowerCase().trim();
-  const registro  = codigosVerificacao.find(c => c.email === emailNorm && !c.usado);
-  if (!registro) return res.status(400).json({ message: 'Solicitação não encontrada. Tente o cadastro novamente.' });
-
-  const codigo  = String(Math.floor(100000 + Math.random() * 900000));
-  registro.codigo  = codigo;
-  registro.expires = Date.now() + 15 * 60 * 1000;
-
-  res.json({ message: 'Novo código enviado.', ...(process.env.NODE_ENV !== 'production' && { codigo }) });
+app.post('/auth/reenviar-codigo', (req,res) => {
+  const emailNorm = (req.body.email||'').toLowerCase().trim();
+  const reg = codigosVerificacao.find(c => c.email===emailNorm&&!c.usado);
+  if (!reg) return res.status(400).json({ message:'Solicitação não encontrada.' });
+  reg.codigo  = String(Math.floor(100000+Math.random()*900000));
+  reg.expires = Date.now()+15*60*1000;
+  res.json({ message:'Novo código enviado.', ...(process.env.NODE_ENV!=='production'&&{codigo:reg.codigo}) });
 });
 
-/* Esqueci senha */
-app.post('/auth/esqueci-senha', (req, res) => {
-  const emailNorm = (req.body.email || '').toLowerCase().trim();
-  const u = usuarios.find(x => x.email === emailNorm && x.status === 'ativo');
-  if (u) {
-    const token   = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const expires = Date.now() + 30 * 60 * 1000;
-    resetTokens.push({ token, usuario_id: u.id, expires, usado: false });
-    if (process.env.NODE_ENV !== 'production') return res.json({ message: 'Token gerado.', token });
-  }
-  res.json({ message: 'Se o e-mail existir, você receberá as instruções em breve.' });
+app.post('/auth/esqueci-senha', async (req,res) => {
+  try {
+    const emailNorm = (req.body.email||'').toLowerCase().trim();
+    const { rows } = await query("SELECT id FROM usuarios WHERE email=$1 AND status='ativo'",[emailNorm]);
+    if (rows.length) {
+      const token   = Math.random().toString(36).slice(2)+Date.now().toString(36);
+      const expires = new Date(Date.now()+30*60*1000);
+      await query('INSERT INTO reset_tokens(usuario_id,token,expires_at) VALUES($1,$2,$3)',[rows[0].id,token,expires]);
+      if (process.env.NODE_ENV!=='production') return res.json({ message:'Token gerado.', token });
+    }
+    res.json({ message:'Se o e-mail existir, você receberá as instruções em breve.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Redefinir senha */
-app.post('/auth/redefinir-senha', async (req, res) => {
-  const { token, novaSenha } = req.body;
-  const rt = resetTokens.find(t => t.token === token && !t.usado && t.expires > Date.now());
-  if (!rt) return res.status(400).json({ message: 'Token inválido ou expirado.' });
-  const u = usuarios.find(x => x.id === rt.usuario_id);
-  if (!u)  return res.status(400).json({ message: 'Usuário não encontrado.' });
-  u.senha_hash = await bcrypt.hash(novaSenha, 10);
-  rt.usado     = true;
-  res.json({ message: 'Senha redefinida com sucesso.' });
+app.post('/auth/redefinir-senha', async (req,res) => {
+  try {
+    const { token, novaSenha } = req.body;
+    const { rows } = await query("SELECT * FROM reset_tokens WHERE token=$1 AND usado=false AND expires_at>NOW()",[token]);
+    if (!rows.length) return res.status(400).json({ message:'Token inválido ou expirado.' });
+    const hash = await bcrypt.hash(novaSenha, 10);
+    await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2',[hash, rows[0].usuario_id]);
+    await query('UPDATE reset_tokens SET usado=true WHERE id=$1',[rows[0].id]);
+    res.json({ message:'Senha redefinida com sucesso.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Meu perfil */
-app.get('/auth/me', autenticar, (req, res) => {
-  const u = usuarios.find(x => x.id === req.user.id);
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  res.json(formatUser(u));
+app.get('/auth/me', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('SELECT * FROM usuarios WHERE id=$1',[req.user.id]);
+    if (!rows.length) return res.status(404).json({ message:'Usuário não encontrado.' });
+    res.json(fmtUser(rows[0]));
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* Atualizar perfil */
-app.put('/auth/me', autenticar, (req, res) => {
-  const u = usuarios.find(x => x.id === req.user.id);
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  const { nome, sexo, profissao, conselho, telefone } = req.body;
-  if (nome)      u.nome      = nome.trim();
-  if (sexo)      u.sexo      = sexo;
-  if (profissao) u.profissao = profissao;
-  if (conselho !== undefined) u.conselho  = conselho;
-  if (telefone !== undefined) u.telefone  = telefone;
-  res.json(formatUser(u));
+app.put('/auth/me', autenticar, async (req,res) => {
+  try {
+    const { nome, sexo, profissao, conselho, telefone, email } = req.body;
+    await query(
+      `UPDATE usuarios SET
+        nome=COALESCE(NULLIF($1,''),nome), sexo=COALESCE(NULLIF($2,''),sexo),
+        profissao=COALESCE(NULLIF($3,''),profissao), conselho=COALESCE($4,conselho),
+        telefone=COALESCE($5,telefone), email=COALESCE(NULLIF($6,''),email),
+        updated_at=NOW() WHERE id=$7`,
+      [nome||null, sexo||null, profissao||null, conselho??null, telefone??null, email||null, req.user.id]
+    );
+    const { rows } = await query('SELECT * FROM usuarios WHERE id=$1',[req.user.id]);
+    res.json(fmtUser(rows[0]));
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao atualizar perfil.' }); }
 });
 
-/* Alterar senha */
-app.put('/auth/senha', autenticar, async (req, res) => {
-  const { senhaAtual, novaSenha } = req.body;
-  if (!senhaAtual || !novaSenha) return res.status(400).json({ message: 'Senha atual e nova senha são obrigatórias.' });
-  if (novaSenha.length < 6) return res.status(400).json({ message: 'Nova senha deve ter pelo menos 6 caracteres.' });
-
-  const u = usuarios.find(x => x.id === req.user.id);
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-
-  const ok = await bcrypt.compare(senhaAtual, u.senha_hash);
-  if (!ok) return res.status(401).json({ message: 'Senha atual incorreta.' });
-
-  u.senha_hash = await bcrypt.hash(novaSenha, 10);
-  res.json({ message: 'Senha alterada com sucesso.' });
+app.put('/auth/senha', autenticar, async (req,res) => {
+  try {
+    const { senhaAtual, novaSenha } = req.body;
+    if (!senhaAtual||!novaSenha) return res.status(400).json({ message:'Campos obrigatórios.' });
+    if (novaSenha.length<6) return res.status(400).json({ message:'Nova senha: mínimo 6 caracteres.' });
+    const { rows } = await query('SELECT senha_hash FROM usuarios WHERE id=$1',[req.user.id]);
+    if (!rows.length||!await bcrypt.compare(senhaAtual,rows[0].senha_hash))
+      return res.status(401).json({ message:'Senha atual incorreta.' });
+    await query('UPDATE usuarios SET senha_hash=$1 WHERE id=$2',[await bcrypt.hash(novaSenha,10),req.user.id]);
+    res.json({ message:'Senha alterada com sucesso.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    ATENDIMENTOS
-═══════════════════════════════════════════ */
-app.get('/atendimentos', autenticar, (req, res) => {
-  res.json(atendimentos.filter(a => a.usuario_id === req.user.id).map(fmtAtendimento));
+════════════════════════════════════════════════ */
+app.get('/atendimentos', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('SELECT * FROM atendimentos WHERE usuario_id=$1 ORDER BY data DESC, created_at DESC',[req.user.id]);
+    res.json(rows.map(fmtAtendimento));
+  } catch(e) { res.status(500).json({ message:'Erro ao buscar atendimentos.' }); }
 });
 
-app.post('/atendimentos', autenticar, (req, res) => {
-  const b = req.body;
-  const novo = {
-    id: uid(), usuario_id: req.user.id,
-    data:           parseDate(b.data || b.dataAtendimento),
-    hora:           b.hora || null,
-    paciente:       b.paciente || b.pacienteNome,
-    pagador:        b.pagador  || b.pagadorNome,
-    cpfPaciente:    (b.cpfPaciente || b.pacienteCpf || '').replace(/\D/g, ''),
-    cpfPagador:     (b.cpfPagador  || b.pagadorDoc  || '').replace(/\D/g, ''),
-    valorNum:       b.valorNum || 0,
-    situacao:       b.situacao       || 'concluido',
-    recebimento:    b.recebimento    || 'recebido',
-    documentacao:   b.documentacao   || 'pendente',
-    nfStatus:       b.nfStatus       || 'pendente',
-    receitaSaude:   b.receitaSaude   || 'pronto',
-    servico:        b.servico        || 'Consulta',
-    formaPagamento: b.formaPagamento || 'PIX',
-    precisaDoc:     b.precisaDoc ?? false,
-    observacoes:    b.observacoes || '',
-  };
-  atendimentos.unshift(novo);
-  res.status(201).json(fmtAtendimento(novo));
+app.post('/atendimentos', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const { rows } = await query(
+      `INSERT INTO atendimentos(usuario_id,data,hora,paciente,pagador,cpf_paciente,cpf_pagador,
+        valor_num,situacao,recebimento,documentacao,nf_status,receita_saude,servico,
+        forma_pagamento,precisa_doc,paciente_telefone,paciente_email,observacoes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       RETURNING *`,
+      [req.user.id, parseDate(b.data||b.dataAtendimento), b.hora||null,
+       b.paciente||b.pacienteNome, b.pagador||b.pagadorNome,
+       (b.cpfPaciente||b.pacienteCpf||'').replace(/\D/g,''),
+       (b.cpfPagador||b.pagadorDoc||'').replace(/\D/g,''),
+       b.valorNum||0,
+       b.situacao||'concluido', b.recebimento||'recebido',
+       b.documentacao||'pendente', b.nfStatus||'pendente',
+       b.receitaSaude||'pronto', b.servico||'Consulta',
+       b.formaPagamento||'PIX', b.precisaDoc??false,
+       b.pacienteTelefone||null, b.pacienteEmail||null, b.observacoes||null]
+    );
+    res.status(201).json(fmtAtendimento(rows[0]));
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao criar atendimento.' }); }
 });
 
-app.put('/atendimentos/:id', autenticar, (req, res) => {
-  const idx = atendimentos.findIndex(a => a.id === Number(req.params.id) && a.usuario_id === req.user.id);
-  if (idx === -1) return res.status(404).json({ message: 'Atendimento não encontrado.' });
-  const b = req.body;
-  atendimentos[idx] = {
-    ...atendimentos[idx],
-    data:           parseDate(b.data || b.dataAtendimento),
-    hora:           b.hora || null,
-    paciente:       b.paciente || b.pacienteNome,
-    pagador:        b.pagador  || b.pagadorNome,
-    cpfPaciente:    (b.cpfPaciente || b.pacienteCpf || '').replace(/\D/g, ''),
-    cpfPagador:     (b.cpfPagador  || b.pagadorDoc  || '').replace(/\D/g, ''),
-    valorNum:       b.valorNum ?? atendimentos[idx].valorNum,
-    situacao:       b.situacao, recebimento: b.recebimento,
-    documentacao:   b.documentacao, nfStatus: b.nfStatus,
-    receitaSaude:   b.receitaSaude, servico: b.servico,
-    formaPagamento: b.formaPagamento,
-    precisaDoc:     b.precisaDoc ?? false,
-    observacoes:    b.observacoes || '',
-  };
-  res.json(fmtAtendimento(atendimentos[idx]));
+app.put('/atendimentos/:id', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const { rows } = await query(
+      `UPDATE atendimentos SET data=$1,hora=$2,paciente=$3,pagador=$4,cpf_paciente=$5,cpf_pagador=$6,
+        valor_num=$7,situacao=$8,recebimento=$9,documentacao=$10,nf_status=$11,receita_saude=$12,
+        servico=$13,forma_pagamento=$14,precisa_doc=$15,paciente_telefone=$16,paciente_email=$17,
+        observacoes=$18,updated_at=NOW()
+       WHERE id=$19 AND usuario_id=$20 RETURNING *`,
+      [parseDate(b.data||b.dataAtendimento), b.hora||null,
+       b.paciente||b.pacienteNome, b.pagador||b.pagadorNome,
+       (b.cpfPaciente||b.pacienteCpf||'').replace(/\D/g,''),
+       (b.cpfPagador||b.pagadorDoc||'').replace(/\D/g,''),
+       b.valorNum||0,
+       b.situacao||'concluido', b.recebimento||'recebido',
+       b.documentacao||'pendente', b.nfStatus||'pendente',
+       b.receitaSaude||'pronto', b.servico||'Consulta',
+       b.formaPagamento||'PIX', b.precisaDoc??false,
+       b.pacienteTelefone||null, b.pacienteEmail||null, b.observacoes||null,
+       req.params.id, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ message:'Atendimento não encontrado.' });
+    res.json(fmtAtendimento(rows[0]));
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao atualizar.' }); }
 });
 
-app.delete('/atendimentos/:id', autenticar, (req, res) => {
-  const len = atendimentos.length;
-  atendimentos = atendimentos.filter(a => !(a.id === Number(req.params.id) && a.usuario_id === req.user.id));
-  if (atendimentos.length === len) return res.status(404).json({ message: 'Não encontrado.' });
-  res.status(204).send();
+app.delete('/atendimentos/:id', autenticar, async (req,res) => {
+  try {
+    const { rowCount } = await query('DELETE FROM atendimentos WHERE id=$1 AND usuario_id=$2',[req.params.id,req.user.id]);
+    if (!rowCount) return res.status(404).json({ message:'Não encontrado.' });
+    res.status(204).send();
+  } catch(e) { res.status(500).json({ message:'Erro ao excluir.' }); }
 });
 
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    DESPESAS
-═══════════════════════════════════════════ */
-app.get('/despesas', autenticar, (req, res) => {
-  res.json(despesas.filter(d => d.usuario_id === req.user.id).map(fmtDespesa));
+════════════════════════════════════════════════ */
+app.get('/despesas', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('SELECT * FROM despesas WHERE usuario_id=$1 ORDER BY data DESC, created_at DESC',[req.user.id]);
+    res.json(rows.map(fmtDespesa));
+  } catch(e) { res.status(500).json({ message:'Erro ao buscar despesas.' }); }
 });
 
-app.post('/despesas', autenticar, (req, res) => {
-  const b = req.body;
-  const nova = {
-    id: uid(), usuario_id: req.user.id,
-    data: parseDate(b.data), descricao: b.descricao, categoria: b.categoria,
-    valorNum: b.valorNum || 0, formaPagamento: b.formaPagamento,
-    comprovanteUrl: b.comprovanteUrl || null,
-  };
-  despesas.unshift(nova);
-  res.status(201).json(fmtDespesa(nova));
+app.post('/despesas', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const { rows } = await query(
+      `INSERT INTO despesas(usuario_id,data,descricao,categoria,valor_num,forma_pagamento,comprovante_url)
+       VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.user.id, parseDate(b.data), b.descricao, b.categoria, b.valorNum||0, b.formaPagamento, b.comprovanteUrl||null]
+    );
+    res.status(201).json(fmtDespesa(rows[0]));
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao criar despesa.' }); }
 });
 
-app.put('/despesas/:id', autenticar, (req, res) => {
-  const idx = despesas.findIndex(d => d.id === Number(req.params.id) && d.usuario_id === req.user.id);
-  if (idx === -1) return res.status(404).json({ message: 'Despesa não encontrada.' });
-  const b = req.body;
-  despesas[idx] = { ...despesas[idx], data: parseDate(b.data), descricao: b.descricao, categoria: b.categoria, valorNum: b.valorNum, formaPagamento: b.formaPagamento, comprovanteUrl: b.comprovanteUrl || null };
-  res.json(fmtDespesa(despesas[idx]));
+app.put('/despesas/:id', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const { rows } = await query(
+      `UPDATE despesas SET data=$1,descricao=$2,categoria=$3,valor_num=$4,forma_pagamento=$5,
+        comprovante_url=$6,updated_at=NOW() WHERE id=$7 AND usuario_id=$8 RETURNING *`,
+      [parseDate(b.data), b.descricao, b.categoria, b.valorNum||0, b.formaPagamento, b.comprovanteUrl||null, req.params.id, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ message:'Despesa não encontrada.' });
+    res.json(fmtDespesa(rows[0]));
+  } catch(e) { res.status(500).json({ message:'Erro ao atualizar.' }); }
 });
 
-app.delete('/despesas/:id', autenticar, (req, res) => {
-  const len = despesas.length;
-  despesas = despesas.filter(d => !(d.id === Number(req.params.id) && d.usuario_id === req.user.id));
-  if (despesas.length === len) return res.status(404).json({ message: 'Não encontrada.' });
-  res.status(204).send();
+app.delete('/despesas/:id', autenticar, async (req,res) => {
+  try {
+    const { rowCount } = await query('DELETE FROM despesas WHERE id=$1 AND usuario_id=$2',[req.params.id,req.user.id]);
+    if (!rowCount) return res.status(404).json({ message:'Não encontrada.' });
+    res.status(204).send();
+  } catch(e) { res.status(500).json({ message:'Erro ao excluir.' }); }
 });
 
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    PACIENTES
-═══════════════════════════════════════════ */
-app.get('/pacientes', autenticar, (req, res) => {
-  res.json(pacientes.filter(p => p.usuario_id === req.user.id).map(p => fmtPaciente(p)));
+════════════════════════════════════════════════ */
+app.get('/pacientes', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('SELECT * FROM pacientes WHERE usuario_id=$1 ORDER BY nome',[req.user.id]);
+    res.json(rows.map(fmtPaciente));
+  } catch(e) { res.status(500).json({ message:'Erro ao buscar pacientes.' }); }
 });
 
-app.post('/pacientes', autenticar, (req, res) => {
-  const b   = req.body;
-  const cpf = (b.cpf || '').replace(/\D/g, '');
-  if (pacientes.find(p => p.usuario_id === req.user.id && p.cpf === cpf))
-    return res.status(409).json({ message: 'Já existe um paciente com este CPF.' });
-  const novo = { id: uid(), usuario_id: req.user.id, nome: b.nome, cpf, telefone: b.telefone || '', email: b.email || '' };
-  pacientes.push(novo);
-  res.status(201).json(fmtPaciente(novo));
+app.post('/pacientes', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const cpf = (b.cpf||'').replace(/\D/g,'');
+    const { rows } = await query(
+      `INSERT INTO pacientes(usuario_id,nome,cpf,telefone,email)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
+      [req.user.id, b.nome, cpf, b.telefone||null, b.email||null]
+    );
+    res.status(201).json(fmtPaciente(rows[0]));
+  } catch(e) {
+    if (e.code==='23505') return res.status(409).json({ message:'Já existe um paciente com este CPF.' });
+    console.error(e); res.status(500).json({ message:'Erro ao criar paciente.' });
+  }
 });
 
-app.put('/pacientes/:id', autenticar, (req, res) => {
-  const idx = pacientes.findIndex(p => p.id === Number(req.params.id) && p.usuario_id === req.user.id);
-  if (idx === -1) return res.status(404).json({ message: 'Paciente não encontrado.' });
-  const b = req.body;
-  pacientes[idx] = { ...pacientes[idx], nome: b.nome, cpf: (b.cpf || '').replace(/\D/g, ''), telefone: b.telefone || '', email: b.email || '' };
-  res.json(fmtPaciente(pacientes[idx]));
+app.put('/pacientes/:id', autenticar, async (req,res) => {
+  try {
+    const b = req.body;
+    const { rows } = await query(
+      `UPDATE pacientes SET nome=$1,cpf=$2,telefone=$3,email=$4,updated_at=NOW()
+       WHERE id=$5 AND usuario_id=$6 RETURNING *`,
+      [b.nome, (b.cpf||'').replace(/\D/g,''), b.telefone||null, b.email||null, req.params.id, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ message:'Paciente não encontrado.' });
+    res.json(fmtPaciente(rows[0]));
+  } catch(e) { res.status(500).json({ message:'Erro ao atualizar.' }); }
 });
 
-app.delete('/pacientes/:id', autenticar, (req, res) => {
-  const len = pacientes.length;
-  pacientes = pacientes.filter(p => !(p.id === Number(req.params.id) && p.usuario_id === req.user.id));
-  if (pacientes.length === len) return res.status(404).json({ message: 'Não encontrado.' });
-  res.status(204).send();
+app.delete('/pacientes/:id', autenticar, async (req,res) => {
+  try {
+    const { rowCount } = await query('DELETE FROM pacientes WHERE id=$1 AND usuario_id=$2',[req.params.id,req.user.id]);
+    if (!rowCount) return res.status(404).json({ message:'Não encontrado.' });
+    res.status(204).send();
+  } catch(e) { res.status(500).json({ message:'Erro ao excluir.' }); }
 });
 
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    NOTIFICAÇÕES (usuário)
-═══════════════════════════════════════════ */
-app.get('/notificacoes', autenticar, (req, res) => {
-  compactUserNotifs(req.user.id);
-  const minhas = notificacoes.filter(n => n.usuario_id === req.user.id);
-  res.json(minhas.map(fmtNotif));
+════════════════════════════════════════════════ */
+app.get('/notificacoes', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('SELECT * FROM notificacoes WHERE usuario_id=$1 ORDER BY created_at DESC LIMIT 50',[req.user.id]);
+    res.json(rows.map(fmtNotif));
+  } catch(e) { res.status(500).json({ message:'Erro ao buscar notificações.' }); }
 });
 
-app.patch('/notificacoes/lidas', autenticar, (req, res) => {
-  notificacoes.forEach(n => { if (n.usuario_id === req.user.id) n.lida = true; });
-  res.json({ message: 'Marcadas como lidas.' });
+app.patch('/notificacoes/lidas', autenticar, async (req,res) => {
+  try {
+    await query('UPDATE notificacoes SET lida=true WHERE usuario_id=$1',[req.user.id]);
+    res.json({ message:'Marcadas como lidas.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.patch('/notificacoes/:id/lida', autenticar, (req, res) => {
-  const n = notificacoes.find(x => x.id === Number(req.params.id) && x.usuario_id === req.user.id);
-  if (!n) return res.status(404).json({ message: 'Notificação não encontrada.' });
-  n.lida = true;
-  res.json(fmtNotif(n));
+app.patch('/notificacoes/:id/lida', autenticar, async (req,res) => {
+  try {
+    const { rows } = await query('UPDATE notificacoes SET lida=true WHERE id=$1 AND usuario_id=$2 RETURNING *',[req.params.id,req.user.id]);
+    if (!rows.length) return res.status(404).json({ message:'Não encontrada.' });
+    res.json(fmtNotif(rows[0]));
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.delete('/notificacoes/:id', autenticar, (req, res) => {
-  const len = notificacoes.length;
-  notificacoes = notificacoes.filter(n => !(n.id === Number(req.params.id) && n.usuario_id === req.user.id));
-  if (notificacoes.length === len) return res.status(404).json({ message: 'Não encontrada.' });
-  res.status(204).send();
+app.delete('/notificacoes/:id', autenticar, async (req,res) => {
+  try {
+    await query('DELETE FROM notificacoes WHERE id=$1 AND usuario_id=$2',[req.params.id,req.user.id]);
+    res.status(204).send();
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* ═══════════════════════════════════════════
-   RELATÓRIOS (histórico)
-═══════════════════════════════════════════ */
-app.get('/relatorios', autenticar, (req, res) => {
-  res.json(relatorios.filter(r => r.usuario_id === req.user.id));
-});
-
-app.post('/relatorios', autenticar, (req, res) => {
-  const b = req.body;
-  const novo = {
-    id:        uid(),
-    usuario_id: req.user.id,
-    nome:      b.nome,
-    tipo:      b.tipo,
-    periodo:   b.periodo,
-    formato:   b.formato || 'PDF',
-    geradoEm:  new Date().toLocaleString('pt-BR').replace(',', ' às'),
-  };
-  relatorios.unshift(novo);
-  res.status(201).json(novo);
-});
-
-app.delete('/relatorios/:id', autenticar, (req, res) => {
-  const len = relatorios.length;
-  relatorios = relatorios.filter(r => !(r.id === Number(req.params.id) && r.usuario_id === req.user.id));
-  if (relatorios.length === len) return res.status(404).json({ message: 'Não encontrado.' });
-  res.status(204).send();
-});
-
-/* ═══════════════════════════════════════════
+/* ════════════════════════════════════════════════
    ADMIN — PROFISSIONAIS
-═══════════════════════════════════════════ */
-app.get('/admin/profissionais', autenticar, apenasAdmin, (_, res) => {
-  res.json(usuarios.filter(u => u.perfil === 'profissional').map(formatUser));
+════════════════════════════════════════════════ */
+app.get('/admin/profissionais', autenticar, apenasAdmin, async (_,res) => {
+  try {
+    const { rows } = await query("SELECT * FROM usuarios WHERE perfil='profissional' ORDER BY created_at DESC");
+    const result = await Promise.all(rows.map(async u => {
+      const { rows:ats } = await query("SELECT COUNT(*) as total, COALESCE(SUM(valor_num),0) as fat FROM atendimentos WHERE usuario_id=$1 AND recebimento='recebido'",[u.id]);
+      return fmtUser(u, Number(ats[0].total), Number(ats[0].fat));
+    }));
+    res.json(result);
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao listar profissionais.' }); }
 });
 
-app.get('/admin/profissionais/:id/atendimentos', autenticar, apenasAdmin, (req, res) => {
-  res.json(atendimentos.filter(a => a.usuario_id === Number(req.params.id)).map(fmtAtendimento));
+app.patch('/admin/profissionais/:id/aprovar', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { rows } = await query("UPDATE usuarios SET status='ativo' WHERE id=$1 AND perfil='profissional' RETURNING nome",[req.params.id]);
+    if (!rows.length) return res.status(404).json({ message:'Usuário não encontrado.' });
+    await addUserNotif(req.params.id,'Seu cadastro foi aprovado! Bem-vindo ao Atende+. Faça login para começar.','sistema');
+    res.json({ message:'Aprovado com sucesso.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.patch('/admin/profissionais/:id/aprovar', autenticar, apenasAdmin, (req, res) => {
-  const u = usuarios.find(x => x.id === Number(req.params.id) && x.perfil === 'profissional');
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  u.status = 'ativo';
-  addUserNotif(u.id, 'Seu cadastro foi aprovado! Bem-vindo ao Atende+. Faça login para começar.', 'sistema');
-  res.json({ message: 'Aprovado com sucesso.' });
+app.patch('/admin/profissionais/:id/rejeitar', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { rows } = await query("UPDATE usuarios SET status='inativo' WHERE id=$1 AND perfil='profissional' RETURNING nome",[req.params.id]);
+    if (!rows.length) return res.status(404).json({ message:'Usuário não encontrado.' });
+    await addUserNotif(req.params.id,'Seu cadastro foi recusado. Entre em contato com o administrador.','sistema');
+    res.json({ message:'Rejeitado.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.patch('/admin/profissionais/:id/rejeitar', autenticar, apenasAdmin, (req, res) => {
-  const u = usuarios.find(x => x.id === Number(req.params.id) && x.perfil === 'profissional');
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  u.status = 'inativo';
-  addUserNotif(u.id, 'Seu cadastro foi recusado. Entre em contato com o administrador para mais informações.', 'sistema');
-  res.json({ message: 'Rejeitado.' });
+app.patch('/admin/profissionais/:id/desativar', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { rows } = await query("UPDATE usuarios SET status='inativo' WHERE id=$1 AND perfil='profissional' RETURNING nome",[req.params.id]);
+    if (!rows.length) return res.status(404).json({ message:'Usuário não encontrado.' });
+    await addUserNotif(req.params.id,'Sua conta foi desativada. Entre em contato com o administrador.','sistema');
+    res.json({ message:'Desativado.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.patch('/admin/profissionais/:id/desativar', autenticar, apenasAdmin, (req, res) => {
-  const u = usuarios.find(x => x.id === Number(req.params.id) && x.perfil === 'profissional');
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  u.status = 'inativo';
-  addUserNotif(u.id, 'Sua conta foi desativada. Entre em contato com o administrador.', 'sistema');
-  res.json({ message: 'Desativado.' });
+app.patch('/admin/profissionais/:id/reativar', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { rows } = await query("UPDATE usuarios SET status='ativo' WHERE id=$1 AND perfil='profissional' RETURNING nome",[req.params.id]);
+    if (!rows.length) return res.status(404).json({ message:'Usuário não encontrado.' });
+    await addUserNotif(req.params.id,'Sua conta foi reativada. Você já pode acessar o sistema normalmente.','sistema');
+    res.json({ message:'Reativado.' });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.patch('/admin/profissionais/:id/reativar', autenticar, apenasAdmin, (req, res) => {
-  const u = usuarios.find(x => x.id === Number(req.params.id) && x.perfil === 'profissional');
-  if (!u) return res.status(404).json({ message: 'Usuário não encontrado.' });
-  u.status = 'ativo';
-  addUserNotif(u.id, 'Sua conta foi reativada. Você já pode acessar o sistema normalmente.', 'sistema');
-  res.json({ message: 'Reativado.' });
-});
-
-/* ═══════════════════════════════════════════
-   ADMIN — NOTIFICAÇÕES DO SISTEMA
-═══════════════════════════════════════════ */
-app.get('/admin/notificacoes', autenticar, apenasAdmin, (_, res) => {
+/* ════════════════════════════════════════════════
+   ADMIN — NOTIFICAÇÕES
+════════════════════════════════════════════════ */
+app.get('/admin/notificacoes', autenticar, apenasAdmin, (_,res) => {
   res.json(adminNotificacoes.map(fmtNotif));
 });
 
-app.patch('/admin/notificacoes/lidas', autenticar, apenasAdmin, (_, res) => {
-  adminNotificacoes.forEach(n => { n.lida = true; });
-  res.json({ message: 'Marcadas como lidas.' });
+app.patch('/admin/notificacoes/lidas', autenticar, apenasAdmin, (_,res) => {
+  adminNotificacoes.forEach(n => { n.lida=true; });
+  res.json({ message:'Marcadas.' });
 });
 
-app.patch('/admin/notificacoes/:id/lida', autenticar, apenasAdmin, (req, res) => {
-  const n = adminNotificacoes.find(x => x.id === Number(req.params.id));
-  if (!n) return res.status(404).json({ message: 'Não encontrada.' });
+app.patch('/admin/notificacoes/:id/lida', autenticar, apenasAdmin, (req,res) => {
+  const n = adminNotificacoes.find(x => x.id===Number(req.params.id));
+  if (!n) return res.status(404).json({ message:'Não encontrada.' });
   n.lida = true;
   res.json(fmtNotif(n));
 });
 
-/* Admin envia notificação para usuário(s) */
-app.post('/admin/notificacoes', autenticar, apenasAdmin, (req, res) => {
-  const { userIds, texto } = req.body;
-  if (!Array.isArray(userIds) || !texto) return res.status(400).json({ message: 'userIds e texto são obrigatórios.' });
-  userIds.forEach(uid => addUserNotif(uid, texto, 'admin'));
-  res.status(201).json({ message: `Notificação enviada para ${userIds.length} usuário(s).` });
+app.post('/admin/notificacoes', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { userIds, texto } = req.body;
+    if (!Array.isArray(userIds)||!texto) return res.status(400).json({ message:'userIds e texto são obrigatórios.' });
+    await Promise.all(userIds.map(id => addUserNotif(id,texto,'admin')));
+    res.status(201).json({ message:`Notificação enviada para ${userIds.length} usuário(s).` });
+  } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
-/* ═══════════════════════════════════════════
-   ADMIN — CONFIGURAÇÕES DO SISTEMA
-═══════════════════════════════════════════ */
-app.get('/admin/configuracoes', autenticar, apenasAdmin, (_, res) => {
-  res.json(adminConfig);
-});
+/* ════════════════════════════════════════════════
+   ADMIN — CONFIGURAÇÕES
+════════════════════════════════════════════════ */
+app.get('/admin/configuracoes',  autenticar, apenasAdmin, (_,res) => res.json(adminConfig));
+app.put('/admin/configuracoes',  autenticar, apenasAdmin, (req,res) => { adminConfig={...adminConfig,...req.body}; res.json(adminConfig); });
 
-app.put('/admin/configuracoes', autenticar, apenasAdmin, (req, res) => {
-  adminConfig = { ...adminConfig, ...req.body };
-  res.json(adminConfig);
-});
-
-/* ═══════════════════════════════════════════
-   ADMIN — EXPORTAR CSV
-═══════════════════════════════════════════ */
-app.get('/admin/exportar', autenticar, apenasAdmin, (req, res) => {
-  const { usuario_id } = req.query;
-  let data = [...atendimentos];
-  if (usuario_id) data = data.filter(a => a.usuario_id === Number(usuario_id));
-  const header = 'data;profissional;paciente;pagador;cpf_pagador;valor;forma_pagamento;nf_status';
-  const rows   = data.map(a => {
-    const u = usuarios.find(x => x.id === a.usuario_id);
-    return [fmtDate(a.data), u?.nome || '', a.paciente, a.pagador, a.cpfPagador, a.valorNum, a.formaPagamento, a.nfStatus].join(';');
-  });
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="atendimentos.csv"');
-  res.send([header, ...rows].join('\n'));
-});
-
-/* ─── ERROR HANDLER ──────────────────────── */
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ message: 'Erro interno no servidor.' });
-});
+/* ─── ERROR HANDLER ──────────────────────────── */
+app.use((err,_req,res,_next) => { console.error(err); res.status(500).json({ message:'Erro interno no servidor.' }); });
 
 app.listen(PORT, () => {
-  console.log(`\nAtende+ API (memória) → porta ${PORT}`);
-  console.log(`Admin: ${process.env.ADMIN_EMAIL || 'developerwesleymelo@gmail.com'} / ${process.env.ADMIN_PASSWORD || 'adm123'}\n`);
+  console.log(`\nAtende+ API (PostgreSQL/Neon) → porta ${PORT}`);
+  console.log(`Admin: ${process.env.ADMIN_EMAIL||'developerwesleymelo@gmail.com'}\n`);
 });
