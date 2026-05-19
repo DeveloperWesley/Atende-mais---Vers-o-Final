@@ -4,8 +4,8 @@ dotenv.config();
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM   = process.env.EMAIL_FROM_NAME
-  ? `"${process.env.EMAIL_FROM_NAME}" <onboarding@resend.dev>`
-  : 'Atende+ <onboarding@resend.dev>';
+  ? `"${process.env.EMAIL_FROM_NAME}" <noreply@atendemais.tech>`
+  : 'Atende+ <noreply@atendemais.tech>';
 
 /* ── Envia código de verificação ── */
 export async function enviarCodigoVerificacao(destinatario, nome, codigo) {
