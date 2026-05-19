@@ -15,9 +15,11 @@ const SECRET = process.env.JWT_SECRET || 'atende-plus-secret-dev';
 /* ─── CORS ──────────────────────────────────── */
 const allowedOrigins = [
   'http://localhost:5173','http://localhost:5174','http://localhost:3000',
+  'https://atendemais.tech','https://www.atendemais.tech',
+  'https://atende-mais-vers-o-final.vercel.app',
   ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
 ];
-app.use(cors({ origin: (o, cb) => (!o || allowedOrigins.includes(o) ? cb(null,true) : cb(new Error('CORS bloqueado'))), credentials: true }));
+app.use(cors({ origin: (o, cb) => (!o || allowedOrigins.some(a => o === a || o.endsWith('.vercel.app')) ? cb(null,true) : cb(new Error('CORS bloqueado'))), credentials: true }));
 app.use(express.json({ limit: '5mb' }));
 
 /* ─── MEMÓRIA (apenas dados temporários) ─────── */
