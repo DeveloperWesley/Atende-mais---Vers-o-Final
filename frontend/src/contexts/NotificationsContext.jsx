@@ -4,6 +4,17 @@ import { useAuth } from './AuthContext.jsx';
 
 const NotificationsContext = createContext(null);
 
+function dedupeNotifs(notifs = []) {
+  const seen = new Set();
+  return notifs.filter((n) => {
+    if (n.lida) return true;
+    const key = n.texto;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function NotificationsProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
 
@@ -20,7 +31,7 @@ export function NotificationsProvider({ children }) {
         .catch(console.error);
     } else {
       api.listarNotificacoes()
-        .then(data => setUserNotifs(prev => ({ ...prev, [user.id]: data || [] })))
+        .then(data => setUserNotifs(prev => ({ ...prev, [user.id]: dedupeNotifs(data) })))
         .catch(console.error);
     }
   }, [isAuthenticated, user?.id]);
@@ -46,7 +57,7 @@ export function NotificationsProvider({ children }) {
     await api.enviarNotificacao({ userIds: [userId], texto }).catch(console.error);
     setUserNotifs(prev => ({
       ...prev,
-      [userId]: [{ id: Date.now(), lida: false, texto, tempo: 'agora', tipo: 'admin' }, ...(prev[userId] || [])],
+      [userId]: dedupeNotifs([{ id: Date.now(), lida: false, texto, tempo: 'agora', tipo: 'admin' }, ...(prev[userId] || [])]),
     }));
   }, []);
 
@@ -55,7 +66,7 @@ export function NotificationsProvider({ children }) {
     setUserNotifs(prev => {
       const next = { ...prev };
       userIds.forEach(uid => {
-        next[uid] = [{ id: Date.now() + uid, lida: false, texto, tempo: 'agora', tipo: 'admin' }, ...(prev[uid] || [])];
+        next[uid] = dedupeNotifs([{ id: Date.now() + uid, lida: false, texto, tempo: 'agora', tipo: 'admin' }, ...(prev[uid] || [])]);
       });
       return next;
     });
@@ -85,7 +96,7 @@ export function NotificationsProvider({ children }) {
     sendToAll,
     markUserAll,
     markUserOne,
-    getUserNotifs: (uid) => userNotifs[uid] || [],
+    getUserNotifs: (uid) => dedupeNotifs(userNotifs[uid] || []),
   }), [adminNotifs, userNotifs]);
 
   return (

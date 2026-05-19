@@ -3,7 +3,7 @@ import {
   Search, Send, Shield, SlidersHorizontal, UserCheck,
   UserX, Users, X
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminSidebar from '../components/AdminSidebar.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -54,15 +54,56 @@ function ToastList({ toasts }) {
 
 function ActionMenu({ onDisable, onReactivate }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
+  const btnRef = useRef(null);
+
+  function updateMenuPosition() {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const menuWidth = 150;
+    const menuHeight = 48;
+    const margin = 10;
+    const left = Math.max(margin, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - margin));
+    const topBelow = rect.bottom + 6;
+    const top = topBelow + menuHeight > window.innerHeight - margin
+      ? Math.max(margin, rect.top - menuHeight - 6)
+      : topBelow;
+
+    setMenuPos({ top, left });
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [open]);
+
   return (
-    <div style={{ position: 'relative' }}>
-      <button className="icon-btn" onClick={() => setOpen(o => !o)}>
+    <div>
+      <button
+        ref={btnRef}
+        className="icon-btn"
+        onClick={() => setOpen(o => !o)}
+        aria-label="Mais ações"
+        aria-expanded={open}
+      >
         <MoreHorizontal size={16} />
       </button>
       {open && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
-          <div className="admin-action-menu">
+          <div
+            className="admin-action-menu"
+            style={menuPos
+              ? { position: 'fixed', top: menuPos.top, left: menuPos.left, right: 'auto', zIndex: 101 }
+              : { position: 'fixed', top: 0, left: 0, right: 'auto', visibility: 'hidden', zIndex: 101 }}
+          >
             {onDisable    && <button onClick={() => { onDisable();    setOpen(false); }}>Desativar</button>}
             {onReactivate && <button onClick={() => { onReactivate(); setOpen(false); }}>Reativar</button>}
           </div>
@@ -162,7 +203,7 @@ export default function AdminDashboard() {
     usuarios, aprovarUsuario, rejeitarUsuario,
     desativarUsuario, reativarUsuario, startImpersonation,
   } = useAuth();
-  const { sendToUser, sendToAll, addAdminNotif } = useNotifications();
+  const { sendToUser, sendToAll } = useNotifications();
   const navigate = useNavigate();
   const { toasts, addToast } = useToast();
   const [notifModal, setNotifModal] = useState(false);
@@ -196,8 +237,6 @@ export default function AdminDashboard() {
   function handleAprovar(u) {
     aprovarUsuario(u.id);
     addToast(`${u.nome} aprovado com sucesso!`, 'success');
-    /* Notifica o usuário aprovado */
-    sendToUser(u.id, 'Seu cadastro foi aprovado! Bem-vindo ao Atende+. Faça login para começar.');
   }
   function handleRejeitar(u) {
     rejeitarUsuario(u.id);
@@ -206,7 +245,6 @@ export default function AdminDashboard() {
   function handleReativar(u) {
     reativarUsuario(u.id);
     addToast(`${u.nome} reativado com sucesso!`, 'success');
-    sendToUser(u.id, 'Sua conta foi reativada. Você já pode acessar o sistema normalmente.');
   }
 
   function handleSendNotif(userIds, texto) {
@@ -219,6 +257,7 @@ export default function AdminDashboard() {
     setConfirm({
       title: 'Desativar usuário?',
       message: `${u.nome} não conseguirá fazer login no sistema.`,
+      confirmLabel: 'Desativar',
       onConfirm: () => { desativarUsuario(u.id); addToast(`${u.nome} desativado.`, 'warning'); setConfirm(null); },
     });
   }
@@ -403,6 +442,7 @@ export default function AdminDashboard() {
 
       {confirm && (
         <ConfirmDialog title={confirm.title} message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
           onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
       )}
       {notifModal && (

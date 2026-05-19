@@ -26,6 +26,27 @@ function isoToBR(iso) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
+function dateToISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function getFirstOfMonth(date = new Date()) {
+  return dateToISO(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+function getLastOfMonth(date = new Date()) {
+  return dateToISO(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+function getLatestDataPeriod(atendimentos = [], despesas = []) {
+  const dates = [...atendimentos, ...despesas]
+    .map(item => parseDateBR(item.data))
+    .filter(Boolean);
+  const latest = dates.length
+    ? new Date(Math.max(...dates.map(d => d.getTime())))
+    : new Date();
+  return { start: getFirstOfMonth(latest), end: getLastOfMonth(latest) };
+}
 function nowLabel() {
   return new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }).replace(',', ' às');
 }
@@ -349,10 +370,15 @@ function csvContador(atend, desp) {
    ════════════════════════════════════════ */
 export default function Relatorios() {
   const { atendimentos, despesas } = useData();
-  const [periodStart,  setPeriodStart]  = useState('2024-05-01');
-  const [periodEnd,    setPeriodEnd]    = useState('2024-05-31');
+  const defaultPeriod = getLatestDataPeriod(atendimentos, despesas);
+  const [periodStart,  setPeriodStart]  = useState(defaultPeriod.start);
+  const [periodEnd,    setPeriodEnd]    = useState(defaultPeriod.end);
+  const [periodTouched, setPeriodTouched] = useState(false);
   const [reportType,   setReportType]   = useState('all');
   const [generated,    setGenerated]    = useState([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [savingReport, setSavingReport] = useState(false);
+  const [reportError, setReportError] = useState('');
   const [page,         setPage]         = useState(1);
   const [menuOpen,     setMenuOpen]     = useState(null);
   const [menuPos,      setMenuPos]      = useState({ top: 0, right: 0 });
@@ -360,8 +386,30 @@ export default function Relatorios() {
 
   /* Carrega histórico da API */
   useEffect(() => {
-    api.listarRelatorios().then(setGenerated).catch(console.error);
+    let alive = true;
+    setLoadingReports(true);
+    setReportError('');
+
+    api.listarRelatorios()
+      .then(data => {
+        if (alive) setGenerated(data || []);
+      })
+      .catch(err => {
+        if (alive) setReportError(err.message || 'Não foi possível carregar os relatórios.');
+      })
+      .finally(() => {
+        if (alive) setLoadingReports(false);
+      });
+
+    return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (periodTouched) return;
+    const nextPeriod = getLatestDataPeriod(atendimentos, despesas);
+    setPeriodStart(nextPeriod.start);
+    setPeriodEnd(nextPeriod.end);
+  }, [atendimentos, despesas, periodTouched]);
 
   const periodLabel = `${isoToBR(periodStart)} - ${isoToBR(periodEnd)}`;
 
@@ -395,25 +443,31 @@ export default function Relatorios() {
 
   /* ── Gerar relatório ── */
   async function handleGenerate() {
+    if (savingReport) return;
+
+    setSavingReport(true);
+    setReportError('');
+
     const mes = new Date(periodEnd).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
-    const novos = await Promise.all(
-      typesToGenerate.map(tipo =>
-        api.salvarRelatorio({
-          nome:     `${TYPE_LABELS[tipo]} - ${mes}`,
-          tipo,
-          periodo:  periodLabel,
-          formato:  tipo === 'atendimentos' ? 'CSV' : 'PDF',
-        }).catch(() => ({
-          id: Date.now() + Math.random(),
-          nome: `${TYPE_LABELS[tipo]} - ${mes}`,
-          tipo, periodo: periodLabel,
-          geradoEm: nowLabel(),
-          formato: tipo === 'atendimentos' ? 'CSV' : 'PDF',
-        }))
-      )
-    );
-    setGenerated(prev => [...novos, ...prev]);
-    setPage(1);
+
+    try {
+      const novos = await Promise.all(
+        typesToGenerate.map(tipo =>
+          api.salvarRelatorio({
+            nome:     `${TYPE_LABELS[tipo]} - ${mes}`,
+            tipo,
+            periodo:  periodLabel,
+            formato:  tipo === 'atendimentos' ? 'CSV' : 'PDF',
+          })
+        )
+      );
+      setGenerated(prev => [...novos, ...prev]);
+      setPage(1);
+    } catch (err) {
+      setReportError(err.message || 'Não foi possível salvar o relatório no servidor.');
+    } finally {
+      setSavingReport(false);
+    }
   }
 
   /* ── Export PDF ── */
@@ -444,6 +498,17 @@ export default function Relatorios() {
     else exportPDF(r.tipo);
   }
 
+  async function deleteReport(r) {
+    setReportError('');
+    try {
+      await api.excluirRelatorio(r.id);
+      setGenerated(prev => prev.filter(x => x.id !== r.id));
+      setMenuOpen(null);
+    } catch (err) {
+      setReportError(err.message || 'Não foi possível excluir o relatório no servidor.');
+    }
+  }
+
   return (
     <div className="app-shell">
       <Sidebar />
@@ -454,6 +519,11 @@ export default function Relatorios() {
         />
 
         <div className="main-content">
+          {reportError && (
+            <div className="form-error" style={{ marginBottom: 12 }}>
+              {reportError}
+            </div>
+          )}
 
           {/* ── Barra de controles ── */}
           <div className="surface-card rel-control-bar">
@@ -463,10 +533,10 @@ export default function Relatorios() {
               <div className="rel-period-inputs">
                 <CalendarDays size={15} className="rel-period-icon" />
                 <input type="date" className="rel-date-input" value={periodStart}
-                  onChange={e => setPeriodStart(e.target.value)} />
+                  onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }} />
                 <span className="rel-period-sep">—</span>
                 <input type="date" className="rel-date-input" value={periodEnd}
-                  onChange={e => setPeriodEnd(e.target.value)} />
+                  onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }} />
               </div>
             </div>
 
@@ -488,8 +558,8 @@ export default function Relatorios() {
             </div>
 
             <div className="rel-actions">
-              <button className="btn btn-primary btn-sm" onClick={handleGenerate}>
-                <FileText size={15} /> Gerar relatório
+              <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={savingReport}>
+                <FileText size={15} /> {savingReport ? 'Gerando...' : 'Gerar relatório'}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => exportPDF(reportType === 'all' ? 'resumo' : reportType)}>
                 <FileText size={15} style={{ color:'#ef4444' }} /> Exportar PDF
@@ -598,7 +668,14 @@ export default function Relatorios() {
                       </td>
                     </tr>
                   ))}
-                  {paginated.length === 0 && (
+                  {loadingReports && (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign:'center', padding:'32px', color:'var(--text-muted)' }}>
+                        Carregando relatórios...
+                      </td>
+                    </tr>
+                  )}
+                  {!loadingReports && paginated.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign:'center', padding:'32px', color:'var(--text-muted)' }}>
                         Nenhum relatório encontrado
@@ -638,7 +715,7 @@ export default function Relatorios() {
                   <Download size={13} /> Download
                 </button>
                 <button className="rel-dropdown-danger"
-                  onClick={() => { api.excluirRelatorio(r.id).catch(console.error); setGenerated(prev => prev.filter(x => x.id !== r.id)); setMenuOpen(null); }}>
+                  onClick={() => deleteReport(r)}>
                   Excluir
                 </button>
               </>);

@@ -1220,6 +1220,10 @@ textarea::placeholder { color: var(--text-light); }
   line-height: 1.1;
 }
 
+.summary-content strong.summary-value-negative {
+  color: var(--red);
+}
+
 .summary-trend {
   display: flex;
   align-items: center;
@@ -2028,6 +2032,7 @@ textarea::placeholder { color: var(--text-light); }
   flex-shrink: 0;
   margin-left: auto;
   padding-left: 4px;
+  max-width: 112px;
 }
 
 /* ================================================
@@ -2109,6 +2114,11 @@ textarea::placeholder { color: var(--text-light); }
 .stats-date-input:focus { border-color: var(--primary); }
 .stats-date-sep { color: var(--text-muted); }
 
+.stats-apply-btn {
+  height: 32px;
+  padding-inline: 14px;
+}
+
 [data-theme="dark"] .stats-date-input {
   background: rgba(5,13,30,0.6);
   border-color: var(--border);
@@ -2126,6 +2136,7 @@ textarea::placeholder { color: var(--text-light); }
 
 .charts-card {
   padding: 20px 24px 20px;
+  min-width: 0;
 }
 
 .charts-card-header {
@@ -2227,11 +2238,16 @@ textarea::placeholder { color: var(--text-light); }
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .dash-table-controls .search-bar {
   min-width: 180px;
   height: 36px;
+}
+
+.dash-table-controls .see-all-link {
+  white-space: nowrap;
 }
 
 .status-filter-select {
@@ -3114,6 +3130,21 @@ textarea::placeholder { color: var(--text-light); }
   .at-metrics-bar { flex-direction: column; gap: 24px; padding: 20px; align-items: flex-start; }
   .at-metric-divider { width: 100%; height: 1px; margin: 0; }
   .at-avatar { width: 30px; height: 30px; font-size: 0.62rem; }
+}
+
+@media (max-width: 1280px) {
+  .summary-sparkline { display: none; }
+  .dash-table-header { flex-direction: column; align-items: stretch; }
+  .dash-table-controls { flex-wrap: wrap; }
+  .dash-table-controls .search-bar { flex: 1; min-width: 220px; }
+}
+
+@media (max-width: 640px) {
+  .stats-daterange { flex-wrap: wrap; }
+  .stats-date-input { flex: 1; min-width: 130px; }
+  .stats-apply-btn { width: 100%; }
+  .donut-layout { flex-direction: column; align-items: flex-start; }
+  .donut-chart-wrap { align-self: center; }
 }
 
 /* ================================================

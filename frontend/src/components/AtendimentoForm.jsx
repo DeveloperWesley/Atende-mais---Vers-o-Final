@@ -91,6 +91,66 @@ function dateToBR(iso) {
   return `${d}/${m}/${y}`;
 }
 
+function dateInputValue(value) {
+  if (!value) return '';
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const [d, m, y] = text.split('/');
+  if (!d || !m || !y) return '';
+  return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
+
+function currencyInputValue(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value === 'number') {
+    return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const clean = String(value).replace(/[^\d,.-]/g, '').trim();
+  if (!clean) return '';
+  const normalized = clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean;
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return String(value);
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function normalizeInitialValues(values, pacientes) {
+  if (!values) return initialState;
+
+  const cpfPaciente = values.pacienteCpf || values.cpfPaciente || '';
+  const cpfPagador = values.pagadorDoc || values.cpfPagador || '';
+  const pacienteRef = pacientes.find((p) => onlyDigits(p.cpf) === onlyDigits(cpfPaciente));
+  const pacienteNome = values.pacienteNome || values.paciente || pacienteRef?.nome || '';
+  const pagadorNome = values.pagadorNome || values.pagador || '';
+  const pacienteCpf = maskCpf(cpfPaciente || pacienteRef?.cpf || '');
+  const pagadorDoc = maskCpfCnpj(cpfPagador);
+  const samePerson = typeof values.pacienteMesmoPagador === 'boolean'
+    ? values.pacienteMesmoPagador
+    : Boolean(
+        onlyDigits(pacienteCpf) &&
+        onlyDigits(pacienteCpf) === onlyDigits(pagadorDoc) &&
+        pacienteNome.trim().toLowerCase() === pagadorNome.trim().toLowerCase()
+      );
+
+  return {
+    ...initialState,
+    dataAtendimento: dateInputValue(values.dataAtendimento || values.data),
+    valorRecebido: currencyInputValue(values.valorRecebido ?? values.valorNum ?? values.valor),
+    pagadorNome,
+    pagadorDoc,
+    pacienteMesmoPagador: samePerson,
+    pacienteNome,
+    pacienteCpf,
+    pacienteTelefone: maskPhone(values.pacienteTelefone || values.telefone || pacienteRef?.telefone || ''),
+    pacienteEmail: values.pacienteEmail || values.email || pacienteRef?.email || '',
+    formaPagamento: values.formaPagamento || initialState.formaPagamento,
+    precisaDoc: typeof values.precisaDoc === 'boolean'
+      ? values.precisaDoc
+      : Boolean(values.nfStatus && values.nfStatus !== 'emitido'),
+    observacoes: values.observacoes || '',
+    servico: values.servico || 'Consulta',
+  };
+}
+
 function AutocompleteField({ label, icon, placeholder, value, error, readOnly, onChange, onSelect, pacientes }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -143,7 +203,7 @@ function AutocompleteField({ label, icon, placeholder, value, error, readOnly, o
 
 export default function AtendimentoForm({ initialValues, onCancel, onSubmit }) {
   const { pacientes, addPaciente } = useData();
-  const [form, setForm] = useState({ ...initialState, ...initialValues });
+  const [form, setForm] = useState(() => normalizeInitialValues(initialValues, pacientes));
   const [errors, setErrors] = useState({});
   const [cpfConflict, setCpfConflict] = useState(null);
   const [pagadorConflict, setPagadorConflict] = useState(null);

@@ -31,6 +31,7 @@ async function request(path, options = {}) {
 export const api = {
   /* ── Auth ── */
   login:          (d) => request('/auth/login',          { method: 'POST', body: JSON.stringify(d) }),
+  registrar:      (d) => request('/auth/registrar',      { method: 'POST', body: JSON.stringify(d) }),
   enviarCodigo:   (d) => request('/auth/enviar-codigo',  { method: 'POST', body: JSON.stringify(d) }),
   verificarCodigo:(d) => request('/auth/verificar-codigo',{ method: 'POST', body: JSON.stringify(d) }),
   reenviarCodigo: (email) => request('/auth/reenviar-codigo', { method: 'POST', body: JSON.stringify({ email }) }),

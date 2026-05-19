@@ -32,8 +32,18 @@ function maskCpf(value) {
 function isValidPhone(v) { const d = onlyDigits(v); return d.length === 10 || d.length === 11; }
 function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()); }
 
+function normalizePacienteInitial(initial) {
+  if (!initial) return EMPTY;
+  return {
+    nome: initial.nome || '',
+    cpf: maskCpf(initial.cpf || ''),
+    telefone: maskPhone(initial.telefone || ''),
+    email: initial.email || '',
+  };
+}
+
 function PacienteForm({ initial, onCancel, onSubmit }) {
-  const [values, setValues] = useState(initial || EMPTY);
+  const [values, setValues] = useState(() => normalizePacienteInitial(initial));
   const [errors, setErrors] = useState({});
 
   function set(field, value) {

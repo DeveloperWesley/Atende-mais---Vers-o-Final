@@ -32,8 +32,8 @@ export function AuthProvider({ children }) {
     return userData;
   }
 
-  async function registrar({ nome, email, senha, especialidade }) {
-    await api.registrar({ nome, email, senha, especialidade });
+  async function registrar({ nome, email, senha, especialidade, sexo }) {
+    await api.registrar({ nome, email, senha, especialidade, sexo });
   }
 
   function logout() {

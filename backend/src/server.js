@@ -158,7 +158,25 @@ function addAdminNotif(texto, tipo = 'sistema') {
 }
 
 function addUserNotif(usuario_id, texto, tipo = 'admin') {
-  notificacoes.unshift({ id: uid(), usuario_id, texto, tipo, lida: false, created_at: new Date() });
+  const userId = Number(usuario_id);
+  const existente = notificacoes.find(n => n.usuario_id === userId && n.texto === texto && !n.lida);
+  if (existente) return existente;
+
+  const nova = { id: uid(), usuario_id: userId, texto, tipo, lida: false, created_at: new Date() };
+  notificacoes.unshift(nova);
+  return nova;
+}
+
+function compactUserNotifs(usuario_id) {
+  const userId = Number(usuario_id);
+  const seen = new Set();
+  notificacoes = notificacoes.filter(n => {
+    if (n.usuario_id !== userId) return true;
+    if (n.lida) return true;
+    if (seen.has(n.texto)) return false;
+    seen.add(n.texto);
+    return true;
+  });
 }
 
 /* ─── MIDDLEWARE JWT ────────────────────── */
@@ -214,6 +232,34 @@ app.post('/auth/login', async (req, res) => {
   u.ultimo_acesso = new Date();
   const token = jwt.sign({ id: u.id, nome: u.nome, email: u.email, perfil: u.perfil }, SECRET, { expiresIn: '7d' });
   res.json({ token, user: formatUser(u) });
+});
+
+/* Cadastro local direto: cria conta pendente para aprovação do admin */
+app.post('/auth/registrar', async (req, res) => {
+  const { nome, email, senha, especialidade, sexo } = req.body;
+  if (!nome || !email || !senha) return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' });
+  if (senha.length < 6) return res.status(400).json({ message: 'Senha deve ter pelo menos 6 caracteres.' });
+
+  const emailNorm = email.toLowerCase().trim();
+  if (usuarios.find(x => x.email === emailNorm)) {
+    return res.status(409).json({ message: 'Já existe uma conta com este e-mail.' });
+  }
+  codigosVerificacao = codigosVerificacao.filter(c => c.email !== emailNorm);
+
+  const senha_hash = await bcrypt.hash(senha, 10);
+  const novo = {
+    id: uid(), nome: nome.trim(), email: emailNorm, senha_hash,
+    perfil: 'profissional', especialidade: especialidade || '',
+    sexo: sexo || 'Não informar', profissao: especialidade || '',
+    conselho: '', telefone: '',
+    status: 'pendente', plano: 'Básico',
+    ultimo_acesso: null, created_at: new Date(),
+  };
+  usuarios.push(novo);
+
+  addAdminNotif(`${nome} aguarda aprovação de cadastro.`, 'pendente');
+
+  res.status(201).json({ message: 'Conta criada! Aguarde aprovação do administrador.' });
 });
 
 /* Etapa 1 do cadastro: valida dados e envia código */
@@ -473,6 +519,7 @@ app.delete('/pacientes/:id', autenticar, (req, res) => {
    NOTIFICAÇÕES (usuário)
 ═══════════════════════════════════════════ */
 app.get('/notificacoes', autenticar, (req, res) => {
+  compactUserNotifs(req.user.id);
   const minhas = notificacoes.filter(n => n.usuario_id === req.user.id);
   res.json(minhas.map(fmtNotif));
 });

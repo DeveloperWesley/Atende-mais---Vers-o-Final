@@ -217,8 +217,12 @@ export default function Atendimentos() {
   /* ── Modal ── */
   function closeModal() { setModal({open:false,editing:null}); }
   function handleSubmit(payload) {
-    const num=parseFloat(String(payload.valorRecebido||'0').replace(',','.'))||0;
+    const payloadValue = Number(payload.valor);
+    const num = Number.isFinite(payloadValue)
+      ? payloadValue
+      : parseFloat(String(payload.valorRecebido || '0').replace(/\./g, '').replace(',', '.')) || 0;
     const item={
+      ...payload,
       data:formatDate(payload.dataAtendimento),
       paciente:payload.pacienteNome, pagador:payload.pagadorNome,
       cpfPaciente:payload.pacienteCpf, cpfPagador:payload.pagadorDoc,
@@ -228,7 +232,7 @@ export default function Atendimentos() {
       formaPagamento:payload.formaPagamento||'PIX',
       documentacao:payload.precisaDoc?'pendente':'completa',
       nfStatus:payload.precisaDoc?'pendente':'emitido',
-      receitaSaude:'pronto', ...payload,
+      receitaSaude:'pronto',
     };
     if (modal.editing) updateAtendimento(modal.editing.id,item);
     else addAtendimento(item);

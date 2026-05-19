@@ -4,12 +4,6 @@ import { Link } from 'react-router-dom';
 import { LogoMark } from '../components/Sidebar.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
-import { api } from '../services/api.js';
-
-/* Gera código de 6 dígitos e simula envio (frontend-only) */
-function gerarCodigo() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
 
 const ESPECIALIDADES = [
   'Psicologia','Nutrição','Medicina','Fonoaudiologia','Fisioterapia',
@@ -21,7 +15,6 @@ export default function Cadastro() {
   const { registrar } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  /* Etapa 1 — formulário */
   const [form, setForm] = useState({
     nome: '', email: '', sexo: 'Não informar',
     especialidade: '', senha: '', confirmarSenha: '',
@@ -29,14 +22,7 @@ export default function Cadastro() {
   const [showPass,   setShowPass]   = useState(false);
   const [errors,     setErrors]     = useState({});
   const [loading,    setLoading]    = useState(false);
-
-  /* Etapa 2 — verificação de e-mail */
-  const [etapa,      setEtapa]      = useState(1); // 1 = form | 2 = código | 3 = sucesso
-  const [codigoReal, setCodigoReal] = useState('');
-  const [codigoInput,setCodigoInput]= useState('');
-  const [codigoErro, setCodigoErro] = useState('');
-  const [reenvios,   setReenvios]   = useState(0);
-  const [reenviando, setReenviando] = useState(false);
+  const [cadastroEnviado, setCadastroEnviado] = useState(false);
 
   function set(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -52,7 +38,6 @@ export default function Cadastro() {
     return erros;
   }
 
-  /* Etapa 1 → envia código via API */
   async function handleSubmit(e) {
     e.preventDefault();
     const erros = validar();
@@ -60,47 +45,15 @@ export default function Cadastro() {
     setErrors({});
     setLoading(true);
     try {
-      const res = await api.enviarCodigo({
+      await registrar({
         nome: form.nome, email: form.email, senha: form.senha,
         especialidade: form.especialidade, sexo: form.sexo,
       });
-      // Em dev, o backend retorna o código diretamente
-      if (res?.codigo) setCodigoReal(res.codigo);
-      setEtapa(2);
+      setCadastroEnviado(true);
     } catch (err) {
-      setErrors({ geral: err.message || 'Erro ao enviar código.' });
+      setErrors({ geral: err.message || 'Erro ao criar cadastro.' });
     } finally {
       setLoading(false);
-    }
-  }
-
-  /* Etapa 2 → verifica código via API */
-  async function handleVerificar(e) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await api.verificarCodigo({ email: form.email, codigo: codigoInput.trim() });
-      setEtapa(3);
-    } catch (err) {
-      setCodigoErro(err.message || 'Código incorreto.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /* Reenviar código via API */
-  async function handleReenviar() {
-    setReenviando(true);
-    try {
-      const res = await api.reenviarCodigo(form.email);
-      if (res?.codigo) setCodigoReal(res.codigo);
-      setCodigoInput('');
-      setCodigoErro('');
-      setReenvios(n => n + 1);
-    } catch (err) {
-      setCodigoErro(err.message || 'Erro ao reenviar código.');
-    } finally {
-      setReenviando(false);
     }
   }
 
@@ -144,8 +97,7 @@ export default function Cadastro() {
               <LogoMark size={52} />
             </div>
 
-            {/* ── Etapa 3: Sucesso ── */}
-            {etapa === 3 && (
+            {cadastroEnviado && (
               <div style={{ textAlign:'center', padding:'16px 0' }}>
                 <div style={{ width:56, height:56, borderRadius:'50%', background:'var(--green-bg)', color:'var(--green)', display:'inline-grid', placeItems:'center', marginBottom:16 }}>
                   <CheckCircle size={28} />
@@ -161,71 +113,7 @@ export default function Cadastro() {
               </div>
             )}
 
-            {/* ── Etapa 2: Verificação de e-mail ── */}
-            {etapa === 2 && (
-              <>
-                <div className="login-form-heading">
-                  <h1>Verificar e-mail</h1>
-                  <p>
-                    Enviamos um código de 6 dígitos para<br />
-                    <strong style={{ color:'var(--primary)' }}>{form.email}</strong>
-                  </p>
-                </div>
-
-                {/* Badge de modo dev */}
-                <div className="cadastro-dev-notice">
-                  <span>Modo demonstração — veja o código no console do navegador (F12)</span>
-                </div>
-
-                <form onSubmit={handleVerificar} className="login-form-fields">
-                  {codigoErro && <div className="form-error">{codigoErro}</div>}
-
-                  <label className="field">
-                    <span className="field-label">Código de verificação</span>
-                    <span className="input-shell">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        placeholder="000000"
-                        value={codigoInput}
-                        onChange={e => { setCodigoInput(e.target.value.replace(/\D/g,'')); setCodigoErro(''); }}
-                        style={{ letterSpacing:'0.25em', fontSize:'1.3rem', textAlign:'center', fontWeight:700 }}
-                        autoFocus
-                      />
-                    </span>
-                  </label>
-
-                  <button type="submit" className="btn btn-primary btn-login" disabled={loading || codigoInput.length < 6}>
-                    {loading ? 'Verificando…' : 'Confirmar e criar conta'}
-                  </button>
-
-                  <div style={{ textAlign:'center', marginTop:4 }}>
-                    <span style={{ fontSize:'0.83rem', color:'var(--text-muted)' }}>
-                      Não recebeu?{' '}
-                      <button
-                        type="button"
-                        className="soft-link"
-                        style={{ background:'none', border:'none', cursor:'pointer', fontWeight:600 }}
-                        onClick={handleReenviar}
-                        disabled={reenviando}
-                      >
-                        {reenviando ? 'Reenviando…' : 'Reenviar código'}
-                      </button>
-                    </span>
-                  </div>
-
-                  <button type="button" className="auth-link-row"
-                    style={{ background:'none', border:'none', cursor:'pointer', marginTop:4 }}
-                    onClick={() => { setEtapa(1); setCodigoInput(''); setCodigoErro(''); }}>
-                    ← Voltar e corrigir dados
-                  </button>
-                </form>
-              </>
-            )}
-
-            {/* ── Etapa 1: Formulário ── */}
-            {etapa === 1 && (
+            {!cadastroEnviado && (
               <>
                 <div className="login-form-heading">
                   <h1>Criar conta</h1>
@@ -311,7 +199,7 @@ export default function Cadastro() {
                   </label>
 
                   <button type="submit" className="btn btn-primary btn-login" disabled={loading}>
-                    {loading ? 'Enviando código…' : 'Solicitar acesso'}
+                    {loading ? 'Criando conta…' : 'Solicitar acesso'}
                     {!loading && <span style={{ fontSize:'1.1em' }}>→</span>}
                   </button>
 

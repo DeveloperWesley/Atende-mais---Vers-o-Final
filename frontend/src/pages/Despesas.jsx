@@ -52,6 +52,51 @@ function catNorm(cat) {
   return CATEGORIAS_FORM.includes(cat) ? cat : 'Outros';
 }
 
+function dateInputValue(value) {
+  if (!value) return '';
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const [d, m, y] = text.split('/');
+  if (!d || !m || !y) return '';
+  return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
+
+function parseCurrencyInput(value) {
+  const clean = String(value || '').replace(/[^\d,.-]/g, '').trim();
+  if (!clean) return 0;
+  const normalized = clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean;
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function currencyInputValue(value) {
+  if (value === undefined || value === null || value === '') return '';
+  const num = typeof value === 'number' ? value : parseCurrencyInput(value);
+  if (!Number.isFinite(num)) return '';
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function normalizeDespesaInitial(initial) {
+  if (!initial) {
+    return {
+      data: '', descricao: '', categoria: 'Aluguel',
+      valorNum: '', formaPagamento: 'Pix', comprovante: null,
+    };
+  }
+
+  return {
+    data: dateInputValue(initial.data),
+    descricao: initial.descricao || '',
+    categoria: catNorm(initial.categoria || 'Aluguel'),
+    valorNum: currencyInputValue(initial.valorNum ?? initial.valor),
+    formaPagamento: FORMAS_PAG.includes(initial.formaPagamento) ? initial.formaPagamento : 'Pix',
+    comprovante: Array.isArray(initial.comprovante)
+      ? initial.comprovante
+      : (initial.comprovante ? true : null),
+    comprovanteUrl: initial.comprovanteUrl || null,
+  };
+}
+
 function pagtoChip(forma) {
   const map = {
     'Pix':          { cls: 'pagto-chip pagto-pix',      icon: <QrCode size={12} />,      label: 'Pix'       },
@@ -174,10 +219,7 @@ function FileUpload({ value, onChange }) {
 
 /* ── Modal de despesa ── */
 function DespesaModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState(initial || {
-    data: '', descricao: '', categoria: 'Aluguel',
-    valorNum: '', formaPagamento: 'Pix', comprovante: null,
-  });
+  const [form, setForm] = useState(() => normalizeDespesaInitial(initial));
   const [errors, setErrors] = useState({});
 
   function set(field) {
@@ -188,7 +230,7 @@ function DespesaModal({ initial, onClose, onSave }) {
     const errs = {};
     if (!form.data)                                        errs.data      = 'Informe a data.';
     if (!form.descricao.trim())                            errs.descricao = 'Informe a descrição.';
-    if (!form.valorNum || parseFloat(String(form.valorNum).replace(',','.')) <= 0) errs.valorNum = 'Informe um valor.';
+    if (!form.valorNum || parseCurrencyInput(form.valorNum) <= 0) errs.valorNum = 'Informe um valor.';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -196,7 +238,7 @@ function DespesaModal({ initial, onClose, onSave }) {
   function handleSave(e) {
     e.preventDefault();
     if (!validate()) return;
-    const num = parseFloat(String(form.valorNum).replace(',', '.')) || 0;
+    const num = parseCurrencyInput(form.valorNum);
     onSave({ ...form, valorNum: num, valor: fmt(num) });
   }
 
@@ -453,8 +495,9 @@ export default function Despesas() {
 
   function closeModal() { setModal({ open: false, editing: null }); }
   function handleSave(data) {
-    if (modal.editing) updateDespesa(modal.editing.id, data);
-    else addDespesa(data);
+    const item = { ...data, data: isoToBR(data.data) };
+    if (modal.editing) updateDespesa(modal.editing.id, item);
+    else addDespesa(item);
     closeModal();
   }
 

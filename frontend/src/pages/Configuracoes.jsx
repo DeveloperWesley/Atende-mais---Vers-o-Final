@@ -101,7 +101,7 @@ function SenhaModal({ onClose }) {
    ════════════════════════════════════════ */
 export default function Configuracoes() {
   const { settings, saveSettings } = useSettings();
-  const { theme, toggleTheme }     = useTheme();
+  const { theme, setTheme }        = useTheme();
   const avatarRef = useRef(null);
 
   const [form, setForm]   = useState({ ...settings });
@@ -128,9 +128,9 @@ export default function Configuracoes() {
   }
 
   function handleSave() {
-    /* Sincroniza tema com ThemeContext */
-    if (form.tema !== theme) toggleTheme();
-    saveSettings(form);
+    const selectedTheme = form.tema || theme;
+    if (selectedTheme !== theme) setTheme(selectedTheme);
+    saveSettings({ ...form, tema: selectedTheme });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

@@ -1,6 +1,6 @@
 import { Trash2 } from 'lucide-react';
 
-export default function ConfirmDialog({ title, message, onConfirm, onCancel }) {
+export default function ConfirmDialog({ title, message, confirmLabel = 'Excluir', onConfirm, onCancel }) {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="confirm-dialog surface-card" onClick={e => e.stopPropagation()}>
@@ -11,7 +11,7 @@ export default function ConfirmDialog({ title, message, onConfirm, onCancel }) {
         <p className="confirm-message">{message}</p>
         <div className="confirm-actions">
           <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancelar</button>
-          <button className="btn btn-sm confirm-btn-danger" onClick={onConfirm}>Excluir</button>
+          <button className="btn btn-sm confirm-btn-danger" onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
     </div>
