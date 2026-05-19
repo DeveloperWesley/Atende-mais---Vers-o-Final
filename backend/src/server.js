@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { query } from './database/connection.js';
+import { enviarCodigoVerificacao, enviarRedefinicaoSenha } from './email.js';
 
 dotenv.config();
 
@@ -194,7 +195,9 @@ app.post('/auth/enviar-codigo', async (req,res) => {
     const codigo  = String(Math.floor(100000+Math.random()*900000));
     const expires = Date.now()+15*60*1000;
     codigosVerificacao.push({ email:emailNorm, codigo, expires, dados:{nome,senha,especialidade,sexo} });
-    res.json({ message:'Código enviado.', ...(process.env.NODE_ENV!=='production'&&{codigo}) });
+    /* Envia e-mail real */
+    try { await enviarCodigoVerificacao(emailNorm, nome, codigo); } catch(emailErr) { console.error('Erro ao enviar e-mail:', emailErr.message); }
+    res.json({ message:'Código enviado para o seu e-mail.' });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
 
@@ -218,13 +221,14 @@ app.post('/auth/verificar-codigo', async (req,res) => {
   } catch(e) { console.error(e); res.status(500).json({ message:'Erro interno.' }); }
 });
 
-app.post('/auth/reenviar-codigo', (req,res) => {
+app.post('/auth/reenviar-codigo', async (req,res) => {
   const emailNorm = (req.body.email||'').toLowerCase().trim();
   const reg = codigosVerificacao.find(c => c.email===emailNorm&&!c.usado);
   if (!reg) return res.status(400).json({ message:'Solicitação não encontrada.' });
   reg.codigo  = String(Math.floor(100000+Math.random()*900000));
   reg.expires = Date.now()+15*60*1000;
-  res.json({ message:'Novo código enviado.', ...(process.env.NODE_ENV!=='production'&&{codigo:reg.codigo}) });
+  try { await enviarCodigoVerificacao(emailNorm, reg.dados?.nome||'', reg.codigo); } catch(e) { console.error('Erro ao reenviar e-mail:', e.message); }
+  res.json({ message:'Novo código enviado para o seu e-mail.' });
 });
 
 app.post('/auth/esqueci-senha', async (req,res) => {
@@ -235,7 +239,10 @@ app.post('/auth/esqueci-senha', async (req,res) => {
       const token   = Math.random().toString(36).slice(2)+Date.now().toString(36);
       const expires = new Date(Date.now()+30*60*1000);
       await query('INSERT INTO reset_tokens(usuario_id,token,expires_at) VALUES($1,$2,$3)',[rows[0].id,token,expires]);
-      if (process.env.NODE_ENV!=='production') return res.json({ message:'Token gerado.', token });
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
+      const link = `${frontendUrl}/redefinir-senha?token=${token}`;
+      try { await enviarRedefinicaoSenha(emailNorm, rows[0].nome||'', link); } catch(e) { console.error('Erro ao enviar e-mail:', e.message); }
+      if (process.env.NODE_ENV!=='production') return res.json({ message:'Link enviado.', token });
     }
     res.json({ message:'Se o e-mail existir, você receberá as instruções em breve.' });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
