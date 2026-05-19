@@ -77,6 +77,7 @@ export const api = {
   rejeitarUsuario:   (id) => request(`/admin/profissionais/${id}/rejeitar`,  { method: 'PATCH' }),
   desativarUsuario:  (id) => request(`/admin/profissionais/${id}/desativar`, { method: 'PATCH' }),
   reativarUsuario:   (id) => request(`/admin/profissionais/${id}/reativar`,  { method: 'PATCH' }),
+  excluirUsuario:    (id) => request(`/admin/profissionais/${id}`,           { method: 'DELETE' }),
   exportarAdmin:     (q = '') => request(`/admin/exportar${q}`),
 
   /* ── Admin — notificações ── */

@@ -90,7 +90,15 @@ export default function AdminConfiguracoes() {
       .then(d => setProfile(p => ({ ...p, nome: d.nome || '', telefone: d.telefone || '', email: d.email || '' })))
       .catch(console.error);
     api.listarAdminConfig()
-      .then(d => setSysConfig(prev => ({ ...prev, ...d })))
+      .then(d => setSysConfig(prev => ({
+        ...prev,
+        notifEmail:    d.notificacoesEmail   ?? prev.notifEmail,
+        aprovacaoAuto: d.aprovacaoAutomatica ?? prev.aprovacaoAuto,
+        sessaoTimeout: String(d.sessaoTimeout ?? prev.sessaoTimeout),
+        registroAcoes: d.registroAcoes       ?? prev.registroAcoes,
+        fusoHorario:   d.fusoHorario         ?? prev.fusoHorario,
+        idioma:        d.idioma              ?? prev.idioma,
+      })))
       .catch(console.error);
   }, []);
 

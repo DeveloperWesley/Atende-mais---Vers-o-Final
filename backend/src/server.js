@@ -173,30 +173,36 @@ app.post('/auth/registrar', async (req,res) => {
     const emailNorm = email.toLowerCase().trim();
     const existe = await query('SELECT id FROM usuarios WHERE email=$1',[emailNorm]);
     if (existe.rows.length) return res.status(409).json({ message:'Já existe uma conta com este e-mail.' });
-    const hash = await bcrypt.hash(senha, 10);
+    const hash   = await bcrypt.hash(senha, 10);
+    const status = adminConfig.aprovacaoAutomatica ? 'ativo' : 'pendente';
     await query(
       `INSERT INTO usuarios(nome,email,senha_hash,perfil,especialidade,sexo,profissao,status,plano)
-       VALUES($1,$2,$3,'profissional',$4,$5,$4,'pendente','Básico')`,
-      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar']
+       VALUES($1,$2,$3,'profissional',$4,$5,$4,$6,'Básico')`,
+      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar', status]
     );
-    addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
-    res.status(201).json({ message:'Conta criada! Aguarde aprovação do administrador.' });
+    if (status === 'pendente') addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
+    const msg = status === 'ativo' ? 'Conta criada! Você já pode fazer login.' : 'Conta criada! Aguarde aprovação do administrador.';
+    res.status(201).json({ message: msg });
   } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao criar conta.' }); }
 });
 
 app.post('/auth/enviar-codigo', async (req,res) => {
   try {
-    const { nome, email, senha, especialidade, sexo } = req.body;
+    const { nome, email, senha, especialidade, sexo, cpf } = req.body;
     if (!nome||!email||!senha) return res.status(400).json({ message:'Dados incompletos.' });
+    if (!cpf || (cpf.replace(/\D/g,'').length !== 11 && cpf.replace(/\D/g,'').length !== 14))
+      return res.status(400).json({ message:'CPF ou CNPJ inválido.' });
     const emailNorm = email.toLowerCase().trim();
-    const existe = await query('SELECT id FROM usuarios WHERE email=$1',[emailNorm]);
+    const cpfDigits = cpf.replace(/\D/g,'');
+    const existe    = await query('SELECT id FROM usuarios WHERE email=$1',[emailNorm]);
     if (existe.rows.length) return res.status(409).json({ message:'Já existe uma conta com este e-mail.' });
+    const existeCpf = await query('SELECT id FROM usuarios WHERE cpf=$1',[cpfDigits]);
+    if (existeCpf.rows.length) return res.status(409).json({ message:'Já existe uma conta com este CPF/CNPJ.' });
     codigosVerificacao = codigosVerificacao.filter(c => c.email!==emailNorm);
     const codigo  = String(Math.floor(100000+Math.random()*900000));
     const expires = Date.now()+15*60*1000;
-    codigosVerificacao.push({ email:emailNorm, codigo, expires, dados:{nome,senha,especialidade,sexo} });
-    /* Envia e-mail real */
-    try { await enviarCodigoVerificacao(emailNorm, nome, codigo); } catch(emailErr) { console.error('Erro ao enviar e-mail:', emailErr.message); }
+    codigosVerificacao.push({ email:emailNorm, codigo, expires, dados:{nome,senha,especialidade,sexo,cpf:cpfDigits} });
+    try { await enviarCodigoVerificacao(emailNorm, nome, codigo); } catch(emailErr) { console.error('Erro e-mail:', emailErr.message); }
     res.json({ message:'Código enviado para o seu e-mail.' });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
 });
@@ -209,15 +215,17 @@ app.post('/auth/verificar-codigo', async (req,res) => {
     if (!reg||Date.now()>reg.expires) return res.status(400).json({ message:'Código expirado.' });
     if (reg.codigo!==codigo) return res.status(400).json({ message:'Código incorreto.' });
     reg.usado = true;
-    const { nome, senha, especialidade, sexo } = reg.dados;
-    const hash = await bcrypt.hash(senha, 10);
+    const { nome, senha, especialidade, sexo, cpf } = reg.dados;
+    const hash   = await bcrypt.hash(senha, 10);
+    const status = adminConfig.aprovacaoAutomatica ? 'ativo' : 'pendente';
     await query(
-      `INSERT INTO usuarios(nome,email,senha_hash,perfil,especialidade,sexo,profissao,status,plano)
-       VALUES($1,$2,$3,'profissional',$4,$5,$4,'pendente','Básico')`,
-      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar']
+      `INSERT INTO usuarios(nome,email,senha_hash,perfil,especialidade,sexo,profissao,cpf,status,plano)
+       VALUES($1,$2,$3,'profissional',$4,$5,$4,$6,$7,'Básico')`,
+      [nome.trim(), emailNorm, hash, especialidade||'', sexo||'Não informar', cpf||null, status]
     );
-    addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
-    res.status(201).json({ message:'Conta criada! Aguarde aprovação.' });
+    if (status === 'pendente') addAdminNotif(`${nome.trim()} aguarda aprovação de cadastro.`, 'pendente');
+    const msg = status === 'ativo' ? 'Conta criada! Você já pode fazer login.' : 'Conta criada! Aguarde aprovação do administrador.';
+    res.status(201).json({ message: msg });
   } catch(e) { console.error(e); res.status(500).json({ message:'Erro interno.' }); }
 });
 
@@ -233,16 +241,22 @@ app.post('/auth/reenviar-codigo', async (req,res) => {
 
 app.post('/auth/esqueci-senha', async (req,res) => {
   try {
-    const emailNorm = (req.body.email||'').toLowerCase().trim();
-    const { rows } = await query("SELECT id FROM usuarios WHERE email=$1 AND status='ativo'",[emailNorm]);
+    const input     = (req.body.email||'').trim();
+    const emailNorm = input.toLowerCase();
+    const cpfDigits = input.replace(/\D/g,'');
+    /* Busca por e-mail OU CPF */
+    const { rows } = await query(
+      "SELECT id, nome, email FROM usuarios WHERE (email=$1 OR (cpf=$2 AND $2 != '')) AND status='ativo'",
+      [emailNorm, cpfDigits]
+    );
     if (rows.length) {
       const token   = Math.random().toString(36).slice(2)+Date.now().toString(36);
       const expires = new Date(Date.now()+30*60*1000);
       await query('INSERT INTO reset_tokens(usuario_id,token,expires_at) VALUES($1,$2,$3)',[rows[0].id,token,expires]);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
       const link = `${frontendUrl}/redefinir-senha?token=${token}`;
-      try { await enviarRedefinicaoSenha(emailNorm, rows[0].nome||'', link); } catch(e) { console.error('Erro ao enviar e-mail:', e.message); }
-      if (process.env.NODE_ENV!=='production') return res.json({ message:'Link enviado.', token });
+      try { await enviarRedefinicaoSenha(rows[0].email, rows[0].nome||'', link); } catch(e) { console.error('Erro ao enviar e-mail:', e.message); }
+      if (process.env.NODE_ENV!=='production') return res.json({ message:'Link enviado.', token, email: rows[0].email });
     }
     res.json({ message:'Se o e-mail existir, você receberá as instruções em breve.' });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
@@ -526,6 +540,14 @@ app.patch('/admin/profissionais/:id/desativar', autenticar, apenasAdmin, async (
     await addUserNotif(req.params.id,'Sua conta foi desativada. Entre em contato com o administrador.','sistema');
     res.json({ message:'Desativado.' });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
+});
+
+app.delete('/admin/profissionais/:id', autenticar, apenasAdmin, async (req,res) => {
+  try {
+    const { rowCount } = await query("DELETE FROM usuarios WHERE id=$1 AND perfil='profissional'",[req.params.id]);
+    if (!rowCount) return res.status(404).json({ message:'Usuário não encontrado.' });
+    res.json({ message:'Cadastro excluído. O usuário pode se cadastrar novamente.' });
+  } catch(e) { console.error(e); res.status(500).json({ message:'Erro ao excluir.' }); }
 });
 
 app.patch('/admin/profissionais/:id/reativar', autenticar, apenasAdmin, async (req,res) => {

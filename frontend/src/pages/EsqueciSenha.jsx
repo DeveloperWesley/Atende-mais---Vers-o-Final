@@ -40,16 +40,13 @@ export default function EsqueciSenha() {
     e.preventDefault();
     if (!input.trim()) { setErro('Informe seu e-mail.'); return; }
 
-    // Só aceita e-mail (CPF não é suportado no backend)
-    const valor = input.trim();
-    if (!isEmail(valor)) { setErro('Informe um e-mail válido.'); return; }
-
     setLoading(true);
     try {
-      const res = await api.esqueciSenha(valor);
-      // Em dev, o backend retorna o token diretamente
+      const res = await api.esqueciSenha(input.trim());
       const token = res?.token || '__enviado__';
-      setEnviado({ email: valor, token });
+      /* Backend retorna o e-mail real quando busca por CPF */
+      const emailExibido = res?.email || input.trim();
+      setEnviado({ email: emailExibido, token });
     } catch (err) {
       setErro(err.message || 'Erro ao processar solicitação.');
     } finally {
@@ -79,16 +76,6 @@ export default function EsqueciSenha() {
               <strong style={{ color:'var(--primary)' }}>{enviado.email}</strong><br/>
               O link expira em <strong>30 minutos</strong>.
             </p>
-
-            {/* Aviso dev — remover quando tiver backend */}
-            <div className="cadastro-dev-notice" style={{ marginBottom:20 }}>
-              Modo demonstração — use o botão abaixo para acessar o link
-            </div>
-
-            <button className="btn btn-primary" style={{ width:'100%', marginBottom:12 }}
-              onClick={() => navigate(`/redefinir-senha?token=${enviado.token}`)}>
-              Acessar link de redefinição →
-            </button>
 
             <Link to="/login" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'0.85rem', color:'var(--text-muted)', textDecoration:'none' }}>
               <ArrowLeft size={14}/> Voltar para o login

@@ -64,6 +64,11 @@ export function AuthProvider({ children }) {
     setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, status: 'ativo' } : u)));
   }, []);
 
+  const excluirUsuario = useCallback(async (id) => {
+    await api.excluirUsuario(id);
+    setUsuarios((prev) => prev.filter((u) => u.id !== id));
+  }, []);
+
   const startImpersonation = useCallback((profissional) => {
     setImpersonateId(profissional.id);
     setImpersonating(profissional);
@@ -90,6 +95,7 @@ export function AuthProvider({ children }) {
       rejeitarUsuario,
       desativarUsuario,
       reativarUsuario,
+      excluirUsuario,
       startImpersonation,
       stopImpersonation,
       isAuthenticated: Boolean(user),

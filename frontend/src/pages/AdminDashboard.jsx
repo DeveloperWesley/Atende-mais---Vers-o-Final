@@ -53,7 +53,7 @@ function ToastList({ toasts }) {
   );
 }
 
-function ActionMenu({ onDisable, onReactivate }) {
+function ActionMenu({ onDisable, onReactivate, onDelete }) {
   const [pos, setPos] = useState(null);
 
   function handleClick(e) {
@@ -99,6 +99,14 @@ function ActionMenu({ onDisable, onReactivate }) {
                 onClick={() => { onDisable(); setPos(null); }}
               >
                 Desativar
+              </button>
+            )}
+            {onDelete && (
+              <button
+                style={{ ...btnBase, color: isDark ? '#ff6b7a' : '#dc2626', borderTop: isDark?'1px solid rgba(255,255,255,0.08)':'1px solid #f3f4f6' }}
+                onClick={() => { onDelete(); setPos(null); }}
+              >
+                Excluir cadastro
               </button>
             )}
             {onReactivate && (
@@ -277,7 +285,7 @@ function NotifComposeCard({ professionals, sendToUser, sendToAll, addToast }) {
 export default function AdminDashboard() {
   const {
     usuarios, aprovarUsuario, rejeitarUsuario,
-    desativarUsuario, reativarUsuario, startImpersonation,
+    desativarUsuario, reativarUsuario, excluirUsuario, startImpersonation,
   } = useAuth();
   const { sendToUser, sendToAll } = useNotifications();
   const navigate = useNavigate();
@@ -321,6 +329,18 @@ export default function AdminDashboard() {
   function handleReativar(u) {
     reativarUsuario(u.id);
     addToast(`${u.nome} reativado com sucesso!`, 'success');
+  }
+
+  function handleExcluir(u) {
+    setConfirm({
+      title: 'Excluir cadastro?',
+      message: `O cadastro de ${u.nome} será removido permanentemente. O usuário poderá se cadastrar novamente com o mesmo e-mail.`,
+      onConfirm: async () => {
+        await excluirUsuario(u.id);
+        addToast(`Cadastro de ${u.nome} excluído.`, 'warning');
+        setConfirm(null);
+      },
+    });
   }
 
   function handleSendNotif(userIds, texto) {
@@ -482,12 +502,21 @@ export default function AdminDashboard() {
                             <button className="icon-btn admin-btn-reject"  title="Recusar" onClick={() => handleRejeitar(u)}><X size={15} /></button>
                           </>)}
                           {u.status === 'ativo' && (
-                            <ActionMenu onDisable={() => handleDesativar(u)} />
+                            <ActionMenu
+                              onDisable={() => handleDesativar(u)}
+                              onDelete={() => handleExcluir(u)}
+                            />
                           )}
                           {u.status === 'inativo' && (
-                            <button className="icon-btn admin-btn-reactivate" title="Reativar" onClick={() => handleReativar(u)}>
-                              <Play size={14} />
-                            </button>
+                            <>
+                              <button className="icon-btn admin-btn-reactivate" title="Reativar" onClick={() => handleReativar(u)}>
+                                <Play size={14} />
+                              </button>
+                              <ActionMenu onDelete={() => handleExcluir(u)} />
+                            </>
+                          )}
+                          {u.status === 'pendente' && (
+                            <ActionMenu onDelete={() => handleExcluir(u)} />
                           )}
                         </div>
                       </td>
