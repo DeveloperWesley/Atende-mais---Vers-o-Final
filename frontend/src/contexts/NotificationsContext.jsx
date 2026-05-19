@@ -21,20 +21,31 @@ export function NotificationsProvider({ children }) {
   const [adminNotifs, setAdminNotifs] = useState([]);
   const [userNotifs,  setUserNotifs]  = useState({});
 
+  /* Função de refresh exposta para o Header usar ao abrir o sino */
+  const refreshNotifs = useCallback(async () => {
+    if (!isAuthenticated || !user) return;
+    try {
+      if (user.perfil === 'admin') {
+        const data = await api.listarAdminNotificacoes();
+        setAdminNotifs(data || []);
+      } else {
+        const data = await api.listarNotificacoes();
+        setUserNotifs(prev => ({ ...prev, [user.id]: dedupeNotifs(data || []) }));
+      }
+    } catch (e) { console.error(e); }
+  }, [isAuthenticated, user?.id]);
+
   /* Carrega notificações ao autenticar */
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    refreshNotifs();
+  }, [refreshNotifs]);
 
-    if (user.perfil === 'admin') {
-      api.listarAdminNotificacoes()
-        .then(data => setAdminNotifs(data || []))
-        .catch(console.error);
-    } else {
-      api.listarNotificacoes()
-        .then(data => setUserNotifs(prev => ({ ...prev, [user.id]: dedupeNotifs(data) })))
-        .catch(console.error);
-    }
-  }, [isAuthenticated, user?.id]);
+  /* Atualiza a cada 30 segundos enquanto logado */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(refreshNotifs, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, refreshNotifs]);
 
   /* ── Admin: marca lidas ── */
   const markAdminAll = useCallback(async () => {
@@ -96,8 +107,9 @@ export function NotificationsProvider({ children }) {
     sendToAll,
     markUserAll,
     markUserOne,
+    refreshNotifs,
     getUserNotifs: (uid) => dedupeNotifs(userNotifs[uid] || []),
-  }), [adminNotifs, userNotifs]);
+  }), [adminNotifs, userNotifs, refreshNotifs]);
 
   return (
     <NotificationsContext.Provider value={value}>

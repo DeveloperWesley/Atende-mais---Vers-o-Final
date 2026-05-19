@@ -3,7 +3,8 @@ import {
   Search, Send, Shield, SlidersHorizontal, UserCheck,
   UserX, Users, X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import AdminSidebar from '../components/AdminSidebar.jsx';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -53,63 +54,66 @@ function ToastList({ toasts }) {
 }
 
 function ActionMenu({ onDisable, onReactivate }) {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState(null);
-  const btnRef = useRef(null);
+  const [pos, setPos] = useState(null);
 
-  function updateMenuPosition() {
-    const rect = btnRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const menuWidth = 150;
-    const menuHeight = 48;
-    const margin = 10;
-    const left = Math.max(margin, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - margin));
-    const topBelow = rect.bottom + 6;
-    const top = topBelow + menuHeight > window.innerHeight - margin
-      ? Math.max(margin, rect.top - menuHeight - 6)
-      : topBelow;
-
-    setMenuPos({ top, left });
+  function handleClick(e) {
+    if (pos) { setPos(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
   }
 
-  useEffect(() => {
-    if (!open) return;
-    updateMenuPosition();
-    window.addEventListener('resize', updateMenuPosition);
-    window.addEventListener('scroll', updateMenuPosition, true);
-    return () => {
-      window.removeEventListener('resize', updateMenuPosition);
-      window.removeEventListener('scroll', updateMenuPosition, true);
-    };
-  }, [open]);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+  const menuStyle = {
+    position: 'fixed',
+    top: pos?.top,
+    right: pos?.right,
+    zIndex: 99999,
+    minWidth: 150,
+    borderRadius: 8,
+    overflow: 'hidden',
+    background: isDark ? '#0f1e38' : '#ffffff',
+    border: isDark ? '1px solid rgba(143,167,214,0.35)' : '1px solid #e5e7eb',
+    boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.7)' : '0 8px 24px rgba(0,0,0,0.12)',
+  };
+
+  const btnBase = {
+    display: 'block', width: '100%', padding: '11px 16px',
+    background: 'none', border: 'none', fontSize: '0.84rem',
+    fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+  };
 
   return (
-    <div>
-      <button
-        ref={btnRef}
-        className="icon-btn"
-        onClick={() => setOpen(o => !o)}
-        aria-label="Mais ações"
-        aria-expanded={open}
-      >
+    <>
+      <button className="icon-btn" onClick={handleClick}>
         <MoreHorizontal size={16} />
       </button>
-      {open && (
+
+      {pos && createPortal(
         <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
-          <div
-            className="admin-action-menu"
-            style={menuPos
-              ? { position: 'fixed', top: menuPos.top, left: menuPos.left, right: 'auto', zIndex: 101 }
-              : { position: 'fixed', top: 0, left: 0, right: 'auto', visibility: 'hidden', zIndex: 101 }}
-          >
-            {onDisable    && <button onClick={() => { onDisable();    setOpen(false); }}>Desativar</button>}
-            {onReactivate && <button onClick={() => { onReactivate(); setOpen(false); }}>Reativar</button>}
+          <div style={{ position:'fixed', inset:0, zIndex:99998 }} onClick={() => setPos(null)} />
+          <div style={menuStyle}>
+            {onDisable && (
+              <button
+                style={{ ...btnBase, color: isDark ? '#ff6b7a' : '#dc2626' }}
+                onClick={() => { onDisable(); setPos(null); }}
+              >
+                Desativar
+              </button>
+            )}
+            {onReactivate && (
+              <button
+                style={{ ...btnBase, color: isDark ? '#22d886' : '#059669' }}
+                onClick={() => { onReactivate(); setPos(null); }}
+              >
+                Reativar
+              </button>
+            )}
           </div>
-        </>
+        </>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
@@ -194,6 +198,78 @@ function SendNotifModal({ usuarios, onClose, onSend }) {
           </div>
         </form>
       </section>
+    </div>
+  );
+}
+
+/* ── Card de envio de notificações ── */
+function NotifComposeCard({ professionals, sendToUser, sendToAll, addToast }) {
+  const [dest,  setDest]  = useState('all');
+  const [userId,setUserId]= useState('');
+  const [texto, setTexto] = useState('');
+  const [sending,setSending]=useState(false);
+
+  const ativos = professionals.filter(u => u.status === 'ativo');
+
+  async function handleSend(e) {
+    e.preventDefault();
+    if (!texto.trim()) return;
+    setSending(true);
+    const ids = dest === 'all' ? ativos.map(u => u.id) : [Number(userId)];
+    if (dest === 'one') await sendToUser(ids[0], texto.trim());
+    else await sendToAll(ids, texto.trim());
+    addToast(`Notificação enviada para ${dest === 'all' ? `${ativos.length} usuário(s)` : ativos.find(u=>u.id===Number(userId))?.nome || 'usuário'}!`, 'success');
+    setTexto('');
+    setSending(false);
+  }
+
+  return (
+    <div className="surface-card admin-notif-compose">
+      <div className="admin-notif-compose-header">
+        <Bell size={18} />
+        <strong>Enviar notificação</strong>
+        <span className="admin-notif-compose-sub">A mensagem aparecerá no sino dos usuários selecionados</span>
+      </div>
+
+      <form onSubmit={handleSend} className="admin-notif-compose-form">
+        <div className="admin-notif-compose-row">
+          {/* Destinatário */}
+          <div className="desp-filter-select-wrap" style={{ minWidth: 200 }}>
+            <Users size={13} className="desp-filter-icon" />
+            <select className="desp-filter-select" value={dest} onChange={e => setDest(e.target.value)}>
+              <option value="all">Todos os usuários ativos ({ativos.length})</option>
+              <option value="one">Usuário específico</option>
+            </select>
+            <ChevronDown size={12} className="desp-filter-chevron" />
+          </div>
+
+          {dest === 'one' && (
+            <div className="desp-filter-select-wrap" style={{ minWidth: 220 }}>
+              <Users size={13} className="desp-filter-icon" />
+              <select className="desp-filter-select" value={userId} onChange={e => setUserId(e.target.value)} required>
+                <option value="">Selecione o usuário…</option>
+                {ativos.map(u => (
+                  <option key={u.id} value={u.id}>{u.nome} — {u.especialidade}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="desp-filter-chevron" />
+            </div>
+          )}
+        </div>
+
+        <div className="admin-notif-compose-msg">
+          <textarea
+            value={texto}
+            onChange={e => setTexto(e.target.value)}
+            placeholder="Digite a mensagem da notificação…"
+            rows={2}
+            required
+          />
+          <button type="submit" className="btn btn-primary btn-sm admin-notif-send-btn" disabled={sending || !texto.trim()}>
+            <Send size={14} /> {sending ? 'Enviando…' : 'Enviar'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -315,6 +391,9 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+
+          {/* ── Card envio de notificações ── */}
+          <NotifComposeCard professionals={professionals} sendToUser={sendToUser} sendToAll={sendToAll} addToast={addToast} />
 
           {/* ── Filtros ── */}
           <div className="surface-card admin-filter-card">

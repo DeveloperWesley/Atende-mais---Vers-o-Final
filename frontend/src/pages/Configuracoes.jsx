@@ -100,7 +100,7 @@ function SenhaModal({ onClose }) {
    COMPONENTE PRINCIPAL
    ════════════════════════════════════════ */
 export default function Configuracoes() {
-  const { settings, saveSettings } = useSettings();
+  const { settings, saveSettings, setDisplayPreview } = useSettings();
   const { theme, setTheme }        = useTheme();
   const avatarRef = useRef(null);
 
@@ -112,6 +112,10 @@ export default function Configuracoes() {
     return (e) => {
       const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
       setForm(f => ({ ...f, [field]: val }));
+      /* Atualiza sidebar instantaneamente para nome e sexo */
+      if (field === 'nome' || field === 'sexo') {
+        setDisplayPreview({ [field]: val });
+      }
     };
   }
 

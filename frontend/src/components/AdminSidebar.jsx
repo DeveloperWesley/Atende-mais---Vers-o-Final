@@ -15,7 +15,7 @@ function getInitials(nome = '') {
 
 export default function AdminSidebar() {
   const { logout, user } = useAuth();
-  const { settings }     = useSettings();
+  const { settings, avatar } = useSettings();
   const navigate         = useNavigate();
   const { open, close }  = useSidebar();
 
@@ -58,8 +58,8 @@ export default function AdminSidebar() {
         </nav>
 
         <div className="user-card user-card-static">
-          {settings.avatar
-            ? <img src={settings.avatar} alt="Avatar" className="avatar avatar-img" />
+          {avatar
+            ? <img src={avatar} alt="Avatar" style={{ width:36, height:36, borderRadius:'50%', objectFit:'cover', flexShrink:0 }} />
             : <div className="avatar">{getInitials(user?.nome)}</div>
           }
           <div className="user-card-info">

@@ -2,12 +2,25 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 const ThemeContext = createContext(null);
 
+/* Versão do tema — incrementar aqui força reset em todos os browsers */
+const THEME_VERSION = '2';
+
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [theme, setTheme] = useState(() => {
+    /* Se a versão salva for antiga, ignora e usa o padrão 'dark' */
+    const savedVersion = localStorage.getItem('theme_version');
+    if (savedVersion !== THEME_VERSION) {
+      localStorage.setItem('theme_version', THEME_VERSION);
+      localStorage.setItem('theme', 'dark');
+      return 'dark';
+    }
+    return localStorage.getItem('theme') || 'dark';
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
+    localStorage.setItem('theme_version', THEME_VERSION);
   }, [theme]);
 
   function toggleTheme() {

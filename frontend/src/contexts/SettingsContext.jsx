@@ -3,24 +3,30 @@ import { api } from '../services/api.js';
 import { useAuth } from './AuthContext.jsx';
 
 const SettingsContext = createContext(null);
-const UI_KEY = 'atende_ui_prefs'; // apenas preferências de UI (tema, confirmarExclusao, avatar)
+const uiKey = (userId) => `atende_ui_prefs_${userId || 'guest'}`;
 
 const UI_DEFAULTS = {
   avatar:           null,
   confirmarExclusao: true,
 };
 
+function capitalizeName(name) {
+  return (name || '').trim()
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+}
+
 export function getDisplayName(nome, sexo) {
-  const n = (nome || '').trim();
+  const n = capitalizeName(nome);
   if (!n) return '—';
   if (sexo === 'Masculino') return `Dr. ${n}`;
   if (sexo === 'Feminino')  return `Dra. ${n}`;
   return n;
 }
 
-function loadUiPrefs() {
+function loadUiPrefs(userId) {
   try {
-    const saved = localStorage.getItem(UI_KEY);
+    const saved = localStorage.getItem(uiKey(userId));
     return saved ? { ...UI_DEFAULTS, ...JSON.parse(saved) } : { ...UI_DEFAULTS };
   } catch { return { ...UI_DEFAULTS }; }
 }
@@ -28,8 +34,13 @@ function loadUiPrefs() {
 export function SettingsProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
 
-  /* Prefs de UI (localStorage) */
-  const [uiPrefs, setUiPrefs] = useState(loadUiPrefs);
+  /* Prefs de UI (localStorage) — escopadas por userId */
+  const [uiPrefs, setUiPrefs] = useState(() => loadUiPrefs(null));
+
+  /* Recarrega prefs quando o usuário muda (ex: logout → login outro usuário) */
+  useEffect(() => {
+    setUiPrefs(loadUiPrefs(user?.id));
+  }, [user?.id]);
 
   /* Dados de perfil (API) */
   const [perfil, setPerfil] = useState({
@@ -77,11 +88,11 @@ export function SettingsProvider({ children }) {
       if (apiFields.includes(k)) apiUpdate[k] = v;
     });
 
-    // Salva prefs de UI no localStorage
+    // Salva prefs de UI no localStorage com chave do usuário
     if (Object.keys(uiUpdate).length > 0) {
       setUiPrefs(prev => {
         const next = { ...prev, ...uiUpdate };
-        localStorage.setItem(UI_KEY, JSON.stringify(next));
+        localStorage.setItem(uiKey(user?.id), JSON.stringify(next));
         return next;
       });
     }
@@ -93,10 +104,24 @@ export function SettingsProvider({ children }) {
     }
   }, [isAuthenticated]);
 
-  const displayName = getDisplayName(settings.nome, settings.sexo);
+  /* Preview local de nome/sexo — atualiza displayName em tempo real sem esperar a API */
+  const [preview, setPreview] = useState({ nome: null, sexo: null });
+
+  const displayName = getDisplayName(
+    preview.nome  ?? settings.nome,
+    preview.sexo  ?? settings.sexo
+  );
+
+  /* Atualiza preview instantaneamente ao mudar nome ou sexo */
+  const setDisplayPreview = useCallback((updates) => {
+    setPreview(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  /* avatar exposto diretamente para o Sidebar reagir imediatamente */
+  const avatar = uiPrefs.avatar || null;
 
   return (
-    <SettingsContext.Provider value={{ settings, saveSettings, displayName }}>
+    <SettingsContext.Provider value={{ settings, saveSettings, displayName, avatar, setDisplayPreview }}>
       {children}
     </SettingsContext.Provider>
   );

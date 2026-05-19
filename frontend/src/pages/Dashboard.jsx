@@ -364,7 +364,7 @@ export default function Dashboard() {
                 <p>Recebimentos do mês</p>
                 <strong>{fmt(totalRecebido)}</strong>
                 {receitaTrend && (
-                  <div className="summary-trend">
+                  <div className={`summary-trend${receitaTrend.tone === 'down' ? ' summary-trend-orange' : ''}`}>
                     {receitaTrend.text}
                   </div>
                 )}
@@ -397,7 +397,7 @@ export default function Dashboard() {
                 <strong className={isPrejuizo ? 'summary-value-negative' : ''}>{fmt(lucro)}</strong>
                 {isPrejuizo ? (
                   <div className="summary-trend summary-trend-warning">
-                    despesas acima dos recebimentos
+                    ⚠ Gastos superam receitas
                   </div>
                 ) : lucroTrend && (
                   <div className={`summary-trend${lucroTrend.tone === 'down' ? ' summary-trend-warning' : ''}`}>

@@ -63,6 +63,7 @@ export default function Header({ onNovoAtendimento, title, subtitle, actions }) 
   const {
     adminNotifs, markAdminAll, markAdminOne,
     getUserNotifs, markUserAll, markUserOne,
+    refreshNotifs,
   } = useNotifications();
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -85,15 +86,28 @@ export default function Header({ onNovoAtendimento, title, subtitle, actions }) 
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [notifOpen]);
 
-  /* Nome e saudação */
-  const effectiveName = impersonating ? impersonating.nome : displayName;
-  const sexo          = impersonating ? null : settings?.sexo;
-  const prefix        = sexo === 'Feminino' ? 'Dra.' : sexo === 'Masculino' ? 'Dr.' : '';
-  const primeiroNome  = impersonating
-    ? impersonating.nome.split(' ')[0]
-    : (prefix
-      ? `${prefix} ${effectiveName.replace(/^(Dr\.|Dra\.)\s*/i, '').split(' ')[0]}`
-      : effectiveName.split(' ')[0]);
+  /* Nome e saudação — usa displayName já com Dr./Dra. e capitalizado */
+  function capitalize(str) {
+    return (str || '').trim().toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+  }
+  function getPrefix(sexo) {
+    if (sexo === 'Masculino') return 'Dr.';
+    if (sexo === 'Feminino')  return 'Dra.';
+    return '';
+  }
+
+  let primeiroNome;
+  if (impersonating) {
+    const imp    = impersonating;
+    const prefix = getPrefix(imp.sexo);
+    const first  = capitalize(imp.nome).split(' ')[0];
+    primeiroNome = prefix ? `${prefix} ${first}` : first;
+  } else {
+    /* displayName já tem "Dr. Wesley Melo" — pega até o segundo token */
+    const parts = displayName.split(' ');
+    const hasPrefix = parts[0] === 'Dr.' || parts[0] === 'Dra.';
+    primeiroNome = hasPrefix ? `${parts[0]} ${parts[1] || ''}`.trim() : parts[0];
+  }
 
   const displayTitle    = title    ?? `Olá, ${primeiroNome}!`;
   const displaySubtitle = subtitle ?? 'Aqui está o resumo financeiro do seu consultório.';
@@ -123,7 +137,7 @@ export default function Header({ onNovoAtendimento, title, subtitle, actions }) 
           <button
             className="notif-btn"
             aria-label="Notificações"
-            onClick={() => setNotifOpen(o => !o)}
+            onClick={() => { setNotifOpen(o => !o); refreshNotifs(); }}
           >
             <Bell size={18} />
             {naoLidas > 0 && <span className="notif-badge">{naoLidas}</span>}

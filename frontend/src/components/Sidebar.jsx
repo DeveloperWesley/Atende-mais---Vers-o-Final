@@ -67,6 +67,12 @@ export function Brand({ size, glow = false }) {
   );
 }
 
+const AVATAR_PALETTE = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#0891b2','#9333ea'];
+function avatarColor(nome = '') {
+  let h = 0; for (let i = 0; i < nome.length; i++) h = nome.charCodeAt(i) + ((h << 5) - h);
+  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
+}
+
 function getInitials(nome = '') {
   const parts = nome.trim().split(' ').filter(Boolean);
   if (parts.length === 0) return '?';
@@ -76,7 +82,7 @@ function getInitials(nome = '') {
 
 export default function Sidebar() {
   const { logout, user, impersonating } = useAuth();
-  const { settings, displayName } = useSettings();
+  const { settings, displayName, avatar } = useSettings();
   const navigate = useNavigate();
   const { open, close } = useSidebar();
 
@@ -174,14 +180,35 @@ export default function Sidebar() {
         </nav>
 
         <div className="user-card user-card-static">
-          {!impersonating && settings.avatar
-            ? <img src={settings.avatar} alt="Avatar" className="avatar avatar-img" />
-            : <div className="avatar" style={impersonating ? { background: '#7c3aed' } : {}}>
-                {getInitials(impersonating?.nome || settings.nome || user?.nome)}
-              </div>
-          }
+          {(() => {
+            /* Quando impersonando, carrega o avatar do usuário impersonado */
+            const impAvatar = impersonating
+              ? (() => {
+                  try {
+                    const stored = localStorage.getItem(`atende_ui_prefs_${impersonating.id}`);
+                    return stored ? JSON.parse(stored)?.avatar : null;
+                  } catch { return null; }
+                })()
+              : null;
+
+            const shownAvatar = impersonating ? impAvatar : avatar;
+
+            return shownAvatar
+              ? <img src={shownAvatar} alt="Avatar" style={{ width:36, height:36, borderRadius:'50%', objectFit:'cover', flexShrink:0 }} />
+              : <div className="avatar" style={impersonating ? { background: avatarColor(impersonating.nome) } : {}}>
+                  {getInitials(impersonating?.nome || settings.nome || user?.nome)}
+                </div>;
+          })()}
           <div className="user-card-info">
-            <strong>{impersonating ? impersonating.nome : displayName}</strong>
+            <strong>{impersonating
+              ? (() => {
+                  const imp = impersonating;
+                  const prefix = imp.sexo === 'Masculino' ? 'Dr.' : imp.sexo === 'Feminino' ? 'Dra.' : '';
+                  const name = (imp.nome||'').trim().toLowerCase().replace(/(?:^|\s)\S/g,c=>c.toUpperCase());
+                  return prefix ? `${prefix} ${name}` : name;
+                })()
+              : displayName
+            }</strong>
             <small>{impersonating ? impersonating.especialidade : (isAdmin ? 'Administrador' : settings.profissao || user?.especialidade || 'Profissional')}</small>
           </div>
         </div>
