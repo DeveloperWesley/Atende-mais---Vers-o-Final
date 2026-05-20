@@ -59,7 +59,7 @@ function fmtUser(u, totalAtendimentos=0, totalFaturamento=0) {
     sexo: u.sexo||'Não informar', profissao: u.profissao||u.especialidade||'',
     conselho: u.conselho||'', telefone: u.telefone||'',
     status: u.status, plano: u.plano,
-    ultimoAcesso: u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR') : '—',
+    ultimoAcesso: u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—',
     totalAtendimentos, totalFaturamento: fmt(totalFaturamento),
     criadoEm: u.created_at ? new Date(u.created_at).toISOString().slice(0,10) : '',
   };
