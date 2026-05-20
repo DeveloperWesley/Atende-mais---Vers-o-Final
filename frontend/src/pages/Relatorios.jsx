@@ -365,6 +365,51 @@ function csvContador(atend, desp) {
   downloadXLS('relatorio-contador', [sheetAtend, sheetDesp]);
 }
 
+/* ── DatePickerInput (igual Atendimentos/Despesas) ── */
+function DatePickerInput({ label, value, onChange }) {
+  const calRef = useRef(null);
+  const [text, setText] = useState(() => {
+    if (!value) return '';
+    const [y,m,d] = value.split('-');
+    return `${d}/${m}/${y}`;
+  });
+  useEffect(() => {
+    if (!value) return;
+    const [y,m,d] = value.split('-');
+    setText(`${d}/${m}/${y}`);
+  }, [value]);
+  function handleText(e) {
+    const digits = e.target.value.replace(/\D/g,'').slice(0,8);
+    let masked = digits;
+    if (digits.length>2) masked = digits.slice(0,2)+'/'+digits.slice(2);
+    if (digits.length>4) masked = digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);
+    setText(masked);
+    if (digits.length===8) {
+      const iso = `${digits.slice(4,8)}-${digits.slice(2,4)}-${digits.slice(0,2)}`;
+      if (!isNaN(new Date(iso+'T00:00:00').getTime())) onChange({ target:{ value:iso } });
+    }
+  }
+  function openCal(e) {
+    e.preventDefault();
+    try { calRef.current?.showPicker?.(); } catch { calRef.current?.focus(); }
+  }
+  return (
+    <div className="at-datepick-wrap">
+      <span className="at-date-label">{label}</span>
+      <div className="at-datepick-display">
+        <input type="text" className="at-datepick-text" value={text}
+          onChange={handleText} placeholder="DD/MM/AAAA" maxLength={10} />
+        <button type="button" className="at-datepick-cal-btn" onClick={openCal} tabIndex={-1}>
+          <CalendarDays size={15} />
+        </button>
+        <input ref={calRef} type="date" value={value}
+          onChange={e => { onChange(e); setText((() => { const [y,m,d]=e.target.value.split('-'); return `${d}/${m}/${y}`; })()); }}
+          className="at-datepick-hidden" tabIndex={-1} />
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ════════════════════════════════════════ */
@@ -536,35 +581,24 @@ export default function Relatorios() {
           {/* ── Barra de controles ── */}
           <div className="surface-card rel-control-bar">
 
-            {/* Período */}
-            <div className="rel-labeled-field">
-              <label className="rel-field-label">Período</label>
-              <div className="rel-period-inputs">
-                <div className="at-datepick-display">
-                  <CalendarDays size={14} className="at-datepick-icon" style={{ marginLeft:10 }} />
-                  <input
-                    type="date" value={periodStart}
-                    onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }}
-                    className="at-datepick-text" style={{ width:115 }}
-                  />
-                </div>
-                <span style={{ color:'var(--text-muted)', fontWeight:500 }}>→</span>
-                <div className="at-datepick-display">
-                  <CalendarDays size={14} className="at-datepick-icon" style={{ marginLeft:10 }} />
-                  <input
-                    type="date" value={periodEnd}
-                    onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }}
-                    className="at-datepick-text" style={{ width:115 }}
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Período — usa o mesmo DatePickerInput das outras telas */}
+            <DatePickerInput
+              label="Data inicial"
+              value={periodStart}
+              onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }}
+            />
+            <span className="at-date-arrow">→</span>
+            <DatePickerInput
+              label="Data final"
+              value={periodEnd}
+              onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }}
+            />
 
             {/* Tipo de relatório */}
-            <div className="rel-labeled-field">
-              <label className="rel-field-label">Tipo de relatório</label>
+            <div className="at-datepick-wrap">
+              <span className="at-date-label">Tipo de relatório</span>
               <div className="desp-filter-select-wrap" style={{ minWidth: 210 }}>
-                <BarChart2 size={14} className="desp-filter-icon" />
+                <BarChart2 size={13} className="desp-filter-icon" />
                 <select className="desp-filter-select" value={reportType}
                   onChange={e => { setReportType(e.target.value); setPage(1); }}>
                   <option value="all">Todos os relatórios</option>
@@ -578,10 +612,10 @@ export default function Relatorios() {
             </div>
 
             {/* Formato */}
-            <div className="rel-labeled-field">
-              <label className="rel-field-label">Formato</label>
-              <div className="desp-filter-select-wrap" style={{ minWidth: 120 }}>
-                <FileText size={14} className="desp-filter-icon" />
+            <div className="at-datepick-wrap">
+              <span className="at-date-label">Formato</span>
+              <div className="desp-filter-select-wrap" style={{ minWidth: 110 }}>
+                <FileText size={13} className="desp-filter-icon" />
                 <select className="desp-filter-select" value={exportFormat}
                   onChange={e => setExportFormat(e.target.value)}>
                   <option value="pdf">PDF</option>
@@ -592,10 +626,10 @@ export default function Relatorios() {
             </div>
 
             {/* Botão */}
-            <div className="rel-labeled-field">
-              <label className="rel-field-label" style={{ opacity:0, userSelect:'none' }}>‎</label>
-              <button className="btn btn-primary" onClick={handleGenerate} disabled={savingReport}
-                style={{ height:42, paddingInline:24, whiteSpace:'nowrap' }}>
+            <div className="at-datepick-wrap">
+              <span className="at-date-label" style={{ opacity:0, userSelect:'none' }}>‎</span>
+              <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={savingReport}
+                style={{ height:42, paddingInline:22, whiteSpace:'nowrap' }}>
                 <FileText size={15} /> {savingReport ? 'Gerando...' : 'Gerar relatório'}
               </button>
             </div>
