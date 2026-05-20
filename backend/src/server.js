@@ -610,7 +610,7 @@ app.post('/relatorios', autenticar, (req,res) => {
     id: Date.now(), usuario_id: req.user.id,
     nome: b.nome, tipo: b.tipo, periodo: b.periodo,
     formato: b.formato || 'PDF',
-    geradoEm: new Date().toLocaleString('pt-BR').replace(',', ' às'),
+    geradoEm: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }).replace(',', ' às'),
   };
   if (!relatoriosMap[req.user.id]) relatoriosMap[req.user.id] = [];
   relatoriosMap[req.user.id].unshift(novo);
