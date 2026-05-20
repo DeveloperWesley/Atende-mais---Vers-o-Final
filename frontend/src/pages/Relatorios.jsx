@@ -366,7 +366,7 @@ function csvContador(atend, desp) {
 }
 
 /* ── DatePickerInput (igual Atendimentos/Despesas) ── */
-function DatePickerInput({ label, value, onChange }) {
+function DatePickerInput({ label, value, onChange, hideLabel }) {
   const calRef = useRef(null);
   const [text, setText] = useState(() => {
     if (!value) return '';
@@ -395,7 +395,7 @@ function DatePickerInput({ label, value, onChange }) {
   }
   return (
     <div className="at-datepick-wrap">
-      <span className="at-date-label">{label}</span>
+      {!hideLabel && <span className="at-date-label">{label}</span>}
       <div className="at-datepick-display">
         <input type="text" className="at-datepick-text" value={text}
           onChange={handleText} placeholder="DD/MM/AAAA" maxLength={10} />
@@ -578,56 +578,60 @@ export default function Relatorios() {
             </div>
           )}
 
-          {/* ── Barra de controles (flutuante, sem card) ── */}
-          <div className="at-filter-row" style={{ marginBottom: 24 }}>
+          {/* ── Barra de controles ── */}
+          <div className="surface-card rel-bar-full">
 
-            <DatePickerInput
-              label="Data inicial"
-              value={periodStart}
-              onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }}
-            />
-            <span className="at-date-arrow">→</span>
-            <DatePickerInput
-              label="Data final"
-              value={periodEnd}
-              onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }}
-            />
+            {/* Período */}
+            <div className="rel-bar-item">
+              <span className="at-date-label">Data inicial</span>
+              <DatePickerInput value={periodStart}
+                onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }} />
+            </div>
 
-            <div className="at-filter-group" style={{ alignItems:'flex-end' }}>
-              {/* Tipo de relatório */}
-              <div className="at-datepick-wrap">
-                <span className="at-date-label">Tipo de relatório</span>
-                <div className="desp-filter-select-wrap" style={{ minWidth: 200 }}>
-                  <BarChart2 size={13} className="desp-filter-icon" />
-                  <select className="desp-filter-select" value={reportType}
-                    onChange={e => { setReportType(e.target.value); setPage(1); }}>
-                    <option value="all">Todos os relatórios</option>
-                    <option value="resumo">Resumo financeiro</option>
-                    <option value="atendimentos">Atendimentos recebidos</option>
-                    <option value="despesas">Despesas</option>
-                    <option value="contador">Relatório para contador</option>
-                  </select>
-                  <ChevronDown size={12} className="desp-filter-chevron" />
-                </div>
+            <span className="rel-bar-sep">→</span>
+
+            <div className="rel-bar-item">
+              <span className="at-date-label">Data final</span>
+              <DatePickerInput value={periodEnd}
+                onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }} />
+            </div>
+
+            {/* Tipo */}
+            <div className="rel-bar-item rel-bar-grow">
+              <span className="at-date-label">Tipo de relatório</span>
+              <div className="desp-filter-select-wrap" style={{ width:'100%' }}>
+                <BarChart2 size={13} className="desp-filter-icon" />
+                <select className="desp-filter-select" value={reportType}
+                  onChange={e => { setReportType(e.target.value); setPage(1); }}>
+                  <option value="all">Todos os relatórios</option>
+                  <option value="resumo">Resumo financeiro</option>
+                  <option value="atendimentos">Atendimentos recebidos</option>
+                  <option value="despesas">Despesas</option>
+                  <option value="contador">Relatório para contador</option>
+                </select>
+                <ChevronDown size={12} className="desp-filter-chevron" />
               </div>
+            </div>
 
-              {/* Formato */}
-              <div className="at-datepick-wrap">
-                <span className="at-date-label">Formato</span>
-                <div className="desp-filter-select-wrap" style={{ minWidth: 100 }}>
-                  <FileText size={13} className="desp-filter-icon" />
-                  <select className="desp-filter-select" value={exportFormat}
-                    onChange={e => setExportFormat(e.target.value)}>
-                    <option value="pdf">PDF</option>
-                    <option value="csv">CSV</option>
-                  </select>
-                  <ChevronDown size={12} className="desp-filter-chevron" />
-                </div>
+            {/* Formato */}
+            <div className="rel-bar-item">
+              <span className="at-date-label">Formato</span>
+              <div className="desp-filter-select-wrap" style={{ minWidth:110 }}>
+                <FileText size={13} className="desp-filter-icon" />
+                <select className="desp-filter-select" value={exportFormat}
+                  onChange={e => setExportFormat(e.target.value)}>
+                  <option value="pdf">PDF</option>
+                  <option value="csv">CSV</option>
+                </select>
+                <ChevronDown size={12} className="desp-filter-chevron" />
               </div>
+            </div>
 
-              {/* Botão */}
+            {/* Botão */}
+            <div className="rel-bar-item">
+              <span className="at-date-label" style={{ opacity:0, userSelect:'none' }}>‎</span>
               <button className="btn btn-primary" onClick={handleGenerate} disabled={savingReport}
-                style={{ height:42, paddingInline:22, whiteSpace:'nowrap', alignSelf:'flex-end' }}>
+                style={{ height:42, paddingInline:24, whiteSpace:'nowrap' }}>
                 <FileText size={15} /> {savingReport ? 'Gerando...' : 'Gerar relatório'}
               </button>
             </div>

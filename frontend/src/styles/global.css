@@ -2616,6 +2616,41 @@ textarea::placeholder { color: var(--text-light); }
    RELATÓRIOS
    ================================================ */
 
+/* Barra full-width de relatórios */
+.rel-bar-full {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 18px 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.rel-bar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rel-bar-item .at-datepick-wrap { margin: 0; }
+.rel-bar-item .at-datepick-display { min-width: 140px; }
+
+.rel-bar-grow { flex: 1; min-width: 180px; }
+
+.rel-bar-sep {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 1rem;
+  padding-bottom: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .rel-bar-full { flex-direction: column; align-items: stretch; }
+  .rel-bar-sep { display: none; }
+  .rel-bar-grow { flex: none; }
+}
+
 /* Barra de controles */
 .rel-control-bar {
   display: flex;
