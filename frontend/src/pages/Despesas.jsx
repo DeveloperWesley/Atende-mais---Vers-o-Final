@@ -235,11 +235,28 @@ function DespesaModal({ initial, onClose, onSave }) {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSave(e) {
+  async function handleSave(e) {
     e.preventDefault();
     if (!validate()) return;
     const num = parseCurrencyInput(form.valorNum);
-    onSave({ ...form, valorNum: num, valor: fmt(num) });
+
+    /* Converte arquivos File para base64 antes de salvar */
+    let comprovanteUrl = null;
+    const files = Array.isArray(form.comprovante) ? form.comprovante.filter(f => f instanceof File) : [];
+    if (files.length > 0) {
+      const toBase64 = (f) => new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res({ name: f.name, size: f.size, data: r.result });
+        r.onerror = rej;
+        r.readAsDataURL(f);
+      });
+      const converted = await Promise.all(files.map(toBase64));
+      comprovanteUrl = JSON.stringify(converted);
+    } else if (form.comprovante === true) {
+      comprovanteUrl = 'legacy';
+    }
+
+    onSave({ ...form, valorNum: num, valor: fmt(num), comprovanteUrl });
   }
 
   return (

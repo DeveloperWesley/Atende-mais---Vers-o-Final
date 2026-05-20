@@ -85,14 +85,20 @@ function fmtAtendimento(a) {
 }
 
 function fmtDespesa(d) {
+  const url = d.comprovante_url||d.comprovanteUrl||null;
+  let arquivos = null;
+  if (url && url !== 'legacy') {
+    try { arquivos = JSON.parse(url); } catch { arquivos = null; }
+  }
   return {
     id: Number(d.id), data: fmtDate(d.data), descricao: d.descricao,
     categoria: d.categoria,
     valorNum: Number(d.valor_num||d.valorNum||0),
     valor: fmt(Number(d.valor_num||d.valorNum||0)),
     formaPagamento: d.forma_pagamento||d.formaPagamento||'',
-    comprovante: Boolean(d.comprovante_url||d.comprovanteUrl),
-    comprovanteUrl: d.comprovante_url||d.comprovanteUrl||null,
+    comprovante: Boolean(url),
+    comprovanteUrl: url,
+    arquivos,
   };
 }
 
@@ -587,6 +593,35 @@ app.post('/admin/notificacoes', autenticar, apenasAdmin, async (req,res) => {
     await Promise.all(userIds.map(id => addUserNotif(id,texto,'admin')));
     res.status(201).json({ message:`Notificação enviada para ${userIds.length} usuário(s).` });
   } catch(e) { res.status(500).json({ message:'Erro interno.' }); }
+});
+
+/* ════════════════════════════════════════════════
+   RELATÓRIOS (histórico em memória por sessão)
+════════════════════════════════════════════════ */
+const relatoriosMap = {}; // userId → []
+
+app.get('/relatorios', autenticar, (req,res) => {
+  res.json(relatoriosMap[req.user.id] || []);
+});
+
+app.post('/relatorios', autenticar, (req,res) => {
+  const b = req.body;
+  const novo = {
+    id: Date.now(), usuario_id: req.user.id,
+    nome: b.nome, tipo: b.tipo, periodo: b.periodo,
+    formato: b.formato || 'PDF',
+    geradoEm: new Date().toLocaleString('pt-BR').replace(',', ' às'),
+  };
+  if (!relatoriosMap[req.user.id]) relatoriosMap[req.user.id] = [];
+  relatoriosMap[req.user.id].unshift(novo);
+  res.status(201).json(novo);
+});
+
+app.delete('/relatorios/:id', autenticar, (req,res) => {
+  const uid = req.user.id;
+  if (relatoriosMap[uid])
+    relatoriosMap[uid] = relatoriosMap[uid].filter(r => r.id !== Number(req.params.id));
+  res.status(204).send();
 });
 
 /* ════════════════════════════════════════════════
