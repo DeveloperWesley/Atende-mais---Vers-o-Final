@@ -375,6 +375,7 @@ export default function Relatorios() {
   const [periodEnd,    setPeriodEnd]    = useState(defaultPeriod.end);
   const [periodTouched, setPeriodTouched] = useState(false);
   const [reportType,   setReportType]   = useState('all');
+  const [exportFormat, setExportFormat] = useState('pdf');
   const [generated,    setGenerated]    = useState([]);
   const [loadingReports, setLoadingReports] = useState(false);
   const [savingReport, setSavingReport] = useState(false);
@@ -451,13 +452,20 @@ export default function Relatorios() {
     const mes = new Date(periodEnd).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
 
     try {
+      /* Gera/exporta conforme formato selecionado */
+      const fmt = exportFormat.toUpperCase();
+      typesToGenerate.forEach(tipo => {
+        if (fmt === 'PDF') exportPDF(tipo);
+        else exportCSV(tipo);
+      });
+
       const novos = await Promise.all(
         typesToGenerate.map(tipo =>
           api.salvarRelatorio({
             nome:     `${TYPE_LABELS[tipo]} - ${mes}`,
             tipo,
             periodo:  periodLabel,
-            formato:  tipo === 'atendimentos' ? 'CSV' : 'PDF',
+            formato:  fmt,
           })
         )
       );
@@ -527,23 +535,35 @@ export default function Relatorios() {
 
           {/* ── Barra de controles ── */}
           <div className="surface-card rel-control-bar">
+
             {/* Período */}
-            <div className="rel-period-wrap">
-              <label className="rel-period-label">Período</label>
+            <div className="rel-labeled-field">
+              <label className="rel-field-label">Período</label>
               <div className="rel-period-inputs">
-                <CalendarDays size={15} className="rel-period-icon" />
-                <input type="date" className="rel-date-input" value={periodStart}
-                  onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }} />
-                <span className="rel-period-sep">—</span>
-                <input type="date" className="rel-date-input" value={periodEnd}
-                  onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }} />
+                <div className="at-datepick-display">
+                  <CalendarDays size={14} className="at-datepick-icon" style={{ marginLeft:10 }} />
+                  <input
+                    type="date" value={periodStart}
+                    onChange={e => { setPeriodTouched(true); setPeriodStart(e.target.value); }}
+                    className="at-datepick-text" style={{ width:115 }}
+                  />
+                </div>
+                <span style={{ color:'var(--text-muted)', fontWeight:500 }}>→</span>
+                <div className="at-datepick-display">
+                  <CalendarDays size={14} className="at-datepick-icon" style={{ marginLeft:10 }} />
+                  <input
+                    type="date" value={periodEnd}
+                    onChange={e => { setPeriodTouched(true); setPeriodEnd(e.target.value); }}
+                    className="at-datepick-text" style={{ width:115 }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Tipo de relatório */}
-            <div className="rel-type-wrap">
-              <label className="rel-period-label">Tipo de relatório</label>
-              <div className="desp-filter-select-wrap" style={{ minWidth: 220 }}>
+            <div className="rel-labeled-field">
+              <label className="rel-field-label">Tipo de relatório</label>
+              <div className="desp-filter-select-wrap" style={{ minWidth: 210 }}>
                 <BarChart2 size={14} className="desp-filter-icon" />
                 <select className="desp-filter-select" value={reportType}
                   onChange={e => { setReportType(e.target.value); setPage(1); }}>
@@ -553,21 +573,33 @@ export default function Relatorios() {
                   <option value="despesas">Despesas</option>
                   <option value="contador">Relatório para contador</option>
                 </select>
-                <ChevronDown size={13} className="desp-filter-chevron" />
+                <ChevronDown size={12} className="desp-filter-chevron" />
               </div>
             </div>
 
-            <div className="rel-actions">
-              <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={savingReport}>
+            {/* Formato */}
+            <div className="rel-labeled-field">
+              <label className="rel-field-label">Formato</label>
+              <div className="desp-filter-select-wrap" style={{ minWidth: 120 }}>
+                <FileText size={14} className="desp-filter-icon" />
+                <select className="desp-filter-select" value={exportFormat}
+                  onChange={e => setExportFormat(e.target.value)}>
+                  <option value="pdf">PDF</option>
+                  <option value="csv">CSV</option>
+                </select>
+                <ChevronDown size={12} className="desp-filter-chevron" />
+              </div>
+            </div>
+
+            {/* Botão */}
+            <div className="rel-labeled-field">
+              <label className="rel-field-label" style={{ opacity:0, userSelect:'none' }}>‎</label>
+              <button className="btn btn-primary" onClick={handleGenerate} disabled={savingReport}
+                style={{ height:42, paddingInline:24, whiteSpace:'nowrap' }}>
                 <FileText size={15} /> {savingReport ? 'Gerando...' : 'Gerar relatório'}
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => exportPDF(reportType === 'all' ? 'resumo' : reportType)}>
-                <FileText size={15} style={{ color:'#ef4444' }} /> Exportar PDF
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => exportCSV(reportType === 'all' ? 'atendimentos' : reportType)}>
-                <FileSpreadsheet size={15} style={{ color:'#22c55e' }} /> Exportar CSV
-              </button>
             </div>
+
           </div>
 
           {/* ── Cards de relatórios disponíveis ── */}
