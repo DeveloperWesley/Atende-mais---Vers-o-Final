@@ -45,9 +45,11 @@ export function DataProvider({ children }) {
     try {
       const novo = await api.criarAtendimento(item);
       setAtendimentos((prev) => prev.map((a) => (a.id === tempId ? novo : a)));
+      return novo;
     } catch (err) {
-      console.error('Erro ao criar atendimento:', err);
+      console.error('Erro ao criar atendimento:', err.message, item);
       setAtendimentos((prev) => prev.filter((a) => a.id !== tempId));
+      throw err;
     }
   }
 

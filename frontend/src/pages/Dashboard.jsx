@@ -315,27 +315,27 @@ export default function Dashboard() {
   }
 
   function handleSubmit(payload) {
-    const payloadValue = Number(payload.valor);
-    const num = Number.isFinite(payloadValue)
-      ? payloadValue
-      : parseFloat(String(payload.valorRecebido || '0').replace(/\./g, '').replace(',', '.')) || 0;
+    const num = parseFloat(String(payload.valorRecebido || payload.valor || '0').replace(/\./g, '').replace(',', '.')) || 0;
     const item = {
-      ...payload,
-      data: formatDate(payload.dataAtendimento),
-      hora: payload.hora || '—',
-      paciente: payload.pacienteNome,
-      pagador: payload.pagadorNome,
-      cpfPaciente: payload.pacienteCpf,
-      cpfPagador: payload.pagadorDoc,
-      valorNum: num,
-      valor: formatCurrency(num),
-      situacao: 'concluido',
-      recebimento: 'recebido',
-      servico: payload.servico || 'Consulta',
+      data:           formatDate(payload.dataAtendimento),
+      paciente:       payload.pacienteNome,
+      pagador:        payload.pagadorNome,
+      cpfPaciente:    payload.pacienteCpf,
+      cpfPagador:     payload.pagadorDoc,
+      valorNum:       num,
+      valor:          formatCurrency(num),
+      situacao:       'concluido',
+      recebimento:    'recebido',
+      servico:        payload.servico        || 'Consulta',
       formaPagamento: payload.formaPagamento || 'PIX',
-      documentacao: payload.precisaDoc ? 'pendente' : 'completa',
-      nfStatus: payload.precisaDoc ? 'pendente' : 'emitido',
-      receitaSaude: 'pronto',
+      precisaDoc:     payload.precisaDoc     ?? false,
+      documentacao:   payload.precisaDoc ? 'pendente' : 'completa',
+      nfStatus:       payload.precisaDoc ? 'pendente' : 'emitido',
+      receitaSaude:   'pronto',
+      pacienteTelefone: payload.pacienteTelefone || null,
+      pacienteEmail:    payload.pacienteEmail    || null,
+      observacoes:      payload.observacoes      || null,
+      ...payload,
     };
     if (modal.editing) updateAtendimento(modal.editing.id, item);
     else addAtendimento(item);
